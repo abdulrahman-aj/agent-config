@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+[ "$#" -gt 0 ] || { printf 'Usage: quiet command [arguments...]\n' >&2; exit 2; }
+
+if [[ ${VERBOSE:-0} == 1 ]]; then
+  exec "$@"
+fi
+
+output="$(mktemp)"
+trap 'rm -f "$output"' EXIT
+
+if ! "$@" >"$output" 2>&1; then
+  cat "$output" >&2
+  exit 1
+fi
