@@ -1,4 +1,4 @@
-# OpenCode instructions
+# Personal agent instructions
 
 # Personal
 
@@ -39,14 +39,14 @@
 * **Refactoring**: refactor to simplify or safeguard the requested change.
 
 ## Workflow
-* **Isolation first**: implement in a worktree (`wt switch --create <branch>`); merge only after checks pass.
+* **Isolation first**: implement in a worktree; reuse the current isolated checkout. In T3, use its worktree tools to keep the thread bound to the checkout. Outside T3, use `wt switch --create <branch>`. Merge only after checks pass.
 * **Planning**: use task lists when they help.
 * **Verify**: don't declare success without evidence (tests, logs, or observable behavior).
 * **Root cause**: solve the underlying cause, not the symptom.
 * **Tracer bullets**: build a thin end-to-end slice before filling in details.
 * **Reversible first**: flag hard-to-reverse decisions before making them.
 * **Port omissions**: explicitly document every omitted upstream behavior in the target repository.
-* **Reuse context**: continue with the same sub-agent unless independence or changed scope requires a new one.
+* **Reuse context**: carry forward the brief, findings, and unresolved questions; follow the runtime's task lifecycle.
 * **Delegation**: use cheaper suitable workers for routine tasks, including verification; keep key decisions and synthesis with the primary. Keep trivial work local.
 
 ## Automation
@@ -67,16 +67,18 @@ needs much of the current conversation in the primary agent.
 
 ## Routing
 
-Do not assume `explore` or `general` is cheap. Check its configured model; if unknown,
-use an explicitly named worker with known model routing.
+In T3, discover available provider instances, models, options, and child-task
+support with `orchestrator_capabilities`. Use returned IDs rather than assuming
+OpenCode agent names or native model lists cover all choices. Outside T3, check
+the native worker's configured model before choosing it.
 
 - Muse: default worker, including large changes and difficult debugging.
 - GLM: alternative when Muse's data-use terms are unsuitable, or for a second opinion.
 - Sol: difficult reasoning, engineering, or a second opinion.
 - Astra: only when explicitly requested, including for reviews.
 
-Do not assume another model is better. Before switching, check why the worker failed;
-give missing context or tools to the same worker and resume it.
+Do not assume another model is better. Before switching, check why the worker
+failed and carry the missing context or tools into the next attempt.
 
 Follow the project's provider restrictions for workers and reviewers. Muse Contributor
 may use submitted content for training: ask before first use unless already approved
@@ -85,7 +87,10 @@ for this work.
 ## Execution
 
 - Give each worker a clear task and checks to run. Avoid assigning duplicate tasks.
-- Default to separate worktrees for implementation (see principles Workflow); run parallel tasks via `parallel-work`.
+- Follow T3's injected orchestration instructions and tool contracts. Use `delegate_task` for cross-provider work and separate child worktrees; native same-provider delegation is suitable only when it supports the selected model and isolation is unnecessary.
+- T3 children receive the supplied brief, not the parent conversation. Worktrees start from the parent local commit, without uncommitted edits. Supply needed context and scoped patches explicitly.
+- Prefer async delegation and completion notifications; retain task IDs. Create top-level conversations only when the user asks for separate conversations.
+- Run parallel implementation via `parallel-work`.
 - The primary merges changes, resolves conflicts, and verifies the combined result.
 
 ## Review
@@ -94,6 +99,20 @@ Self-review and run checks. Add an independent reviewer when a second opinion wo
 help establish correctness, especially when mistakes would be costly. Add more only
 for a specific unresolved concern or the user's request. Follow requested counts,
 including no delegation. Use `ask-for-review`; check findings before acting on them.
+
+# Shared instructions and skills
+
+Personal instructions are maintained in `~/agent-config/AGENTS.md`, linked to
+`~/.agents/AGENTS.md` and the harness instruction paths. Shared skills live in
+`~/agent-config/skills/`; individual skill folders are linked into the native
+skill directories, alongside separately installed skills.
+Read a relevant `SKILL.md` before using it. If native discovery is unavailable,
+inspect `~/.agents/skills/` and load only the skills needed for the task.
+
+Edit the source checkout. Edits and resources within installed skills are live;
+run `make` after adding or removing a skill. An existing harness session may need
+to reload its context. Use `remember` to
+persist project rules in the project's `AGENTS.md` and personal rules here.
 
 # Privilege elevation
 
