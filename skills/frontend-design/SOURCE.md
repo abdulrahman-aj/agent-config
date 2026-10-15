@@ -7,6 +7,5 @@ Anthropic's `frontend-design`, Apache-2.0 licensed:
 - Path: `skills/frontend-design/SKILL.md`
 - License copied from `skills/frontend-design/LICENSE.txt` at the same revision.
 
-Local changes: added an explicit existing-design-system safeguard and converted
-non-ASCII punctuation and examples to ASCII descriptions. No upstream behavior
-is intentionally omitted. This is a local copy, not an automatically updated dependency.
+`SKILL.md` and `LICENSE.txt` are unmodified copies from this revision. No upstream
+behavior is omitted. This is a local copy, not an automatically updated dependency.

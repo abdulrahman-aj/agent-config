@@ -1,18 +1,15 @@
 # Source
 
-Adapted from Matt Pocock's `grill-me` and `grilling`, MIT licensed:
+Matt Pocock's `grilling` workflow, installed as `grill-me`, MIT licensed:
 
 - Repository: https://github.com/mattpocock/skills
 - Revision: `3cca18b368ae95cdbdebbff572ccafa662551015`
-- Paths: `skills/productivity/grill-me/SKILL.md`, `skills/productivity/grilling/SKILL.md`
+- Path: `skills/productivity/grilling/SKILL.md`
+- License copied from the repository's `LICENSE` at the same revision.
 
-Local changes:
+The only change to `SKILL.md` is its frontmatter name: `grilling` → `grill-me`.
+The description and instruction body are unchanged upstream content.
 
-- Inlined the interview workflow instead of requiring a separate `grilling` skill.
-- Replaced exhaustive design-tree traversal with consequential decisions and a user-controlled stop.
-- Limited rounds to five independent questions, without prescribed emoji formatting.
-- Made delegation optional; retained fact-finding and dependency-aware questioning.
-- Added explicit evidence-based pushback and optional documentation using existing conventions.
-- Used an explicit-request description instead of tool-specific invocation metadata.
-
-No other upstream behavior is intentionally omitted.
+The upstream `grill-me` wrapper is not installed: it only invokes `grilling` through
+a harness-specific Skill tool. This standalone skill keeps that workflow under one
+name. Upstream UI labels are not copied; no interview instructions are omitted.
