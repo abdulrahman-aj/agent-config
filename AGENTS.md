@@ -106,6 +106,7 @@ Personal instructions are maintained in `~/agent-config/AGENTS.md`, linked to
 `~/.agents/AGENTS.md` and the harness instruction paths. Shared skills live in
 `~/agent-config/skills/`; individual skill folders are linked into the native
 skill directories, alongside separately installed skills.
+Portable OpenCode configuration and its Herdr TUI integration live in `opencode/`.
 Read a relevant `SKILL.md` before using it. If native discovery is unavailable,
 inspect `~/.agents/skills/` and load only the skills needed for the task.
 

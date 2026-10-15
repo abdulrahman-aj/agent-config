@@ -18,3 +18,10 @@ for root in .agents .claude .config/opencode; do
     done
 done
 ln -srfn "$repo/AGENTS.md" "$package/.codex/AGENTS.md"
+
+while IFS= read -r -d '' config; do
+    relative="${config#"$repo/opencode/"}"
+    alias="$package/.config/opencode/$relative"
+    mkdir -p "$(dirname "$alias")"
+    ln -srfn "$config" "$alias"
+done < <(find "$repo/opencode" -type f -print0)

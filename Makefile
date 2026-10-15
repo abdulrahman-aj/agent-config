@@ -1,7 +1,8 @@
-.PHONY: all install check test unstow
+.PHONY: all install check test test-herdr migrate-opencode unstow
 
 TARGET ?= $(HOME)
 STOW ?= stow
+DOTFILES_DIR ?= $(HOME)/dotfiles
 STOW_FLAGS := --no-folding -d .stow -t "$(TARGET)"
 
 all: install
@@ -24,6 +25,13 @@ check:
 
 test:
 	@bash tests/test-deploy.sh
+	@bash tests/test-opencode-migration.sh
+
+test-herdr:
+	@node --test tests/test-herdr-opencode.mjs
+
+migrate-opencode:
+	@bash scripts/migrate-opencode.sh "$(TARGET)" "$(DOTFILES_DIR)"
 
 unstow:
 	@if [ -d .stow/home ] && [ -d "$(TARGET)" ]; then $(STOW) $(STOW_FLAGS) -D home; fi

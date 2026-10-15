@@ -14,6 +14,7 @@ deploy() { make -s -C "$checkout" "$@" TARGET="$target" >/dev/null; }
 mkdir -p "$checkout/scripts" "$checkout/skills/example" "$scratch/omarchy"
 cp "$repo/Makefile" "$checkout/Makefile"
 cp "$repo/scripts/prepare-stow.sh" "$checkout/scripts/"
+cp -R "$repo/opencode" "$checkout/opencode"
 printf 'instructions\n' > "$checkout/AGENTS.md"
 printf 'skill\n' > "$checkout/skills/example/SKILL.md"
 printf 'system skill\n' > "$scratch/omarchy/SKILL.md"
@@ -26,6 +27,11 @@ done
 deploy install
 deploy install
 deploy check
+while IFS= read -r -d '' config; do
+    relative="${config#"$checkout/opencode/"}"
+    [[ "$(realpath "$target/.config/opencode/$relative")" == "$config" ]] \
+        || fail "OpenCode config is not linked: $relative"
+done < <(find "$checkout/opencode" -type f -print0)
 for root in "${roots[@]}"; do
     [[ -d "$target/$root/skills" && ! -L "$target/$root/skills" ]] \
         || fail "native skills directory was replaced: $root"
@@ -89,6 +95,7 @@ rm "$target/.codex/AGENTS.md"
 deploy install
 deploy unstow
 deploy unstow
+[[ ! -L "$target/.config/opencode/cli.json" ]] || fail "OpenCode config link remains"
 for root in "${roots[@]}"; do
     [[ ! -L "$target/$root/skills/example" ]] || fail "managed link remains"
     grep -qx 'local skill' "$target/$root/skills/local/SKILL.md" || fail "local skill lost"

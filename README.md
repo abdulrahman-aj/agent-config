@@ -1,7 +1,7 @@
 # agent-config
 
 Private personal instructions and Agent Skills shared by Codex, OpenCode, and
-Claude Code, including when they run through T3 Code.
+Claude Code, plus OpenCode configuration, including when run through T3 Code.
 
 ## Install
 
@@ -16,7 +16,8 @@ Dotfiles can bootstrap the same checkout with `make agents`. No harness is insta
 
 ## One source
 
-Edit `AGENTS.md` for personal instructions and `skills/<name>/SKILL.md` for skills.
+Edit `AGENTS.md` for personal instructions, `skills/<name>/SKILL.md` for skills,
+and `opencode/` for OpenCode configuration and its Herdr TUI integration.
 Keep each skill's scripts, references, and other resources in the same folder.
 
 | Installed path | Source |
@@ -28,11 +29,22 @@ Keep each skill's scripts, references, and other resources in the same folder.
 | `~/.agents/skills/<name>` | `skills/<name>/` |
 | `~/.claude/skills/<name>` | `skills/<name>/` |
 | `~/.config/opencode/skills/<name>` | `skills/<name>/` |
+| `~/.config/opencode/<file>` | `opencode/<file>` (including nested plugin files) |
 
 `make` prepares symlink aliases in the ignored `.stow/home/` package, then deploys
 them with `stow --no-folding`. The helper creates path mappings only; all content
-stays in the source files. Native skill directories remain real directories, so
-separately installed skills can coexist without being imported into this repo.
+stays in the source files. Native configuration and skill directories remain real
+directories, so separately installed skills can coexist without being imported.
+
+Only repository-owned configuration is deployed. OpenCode credentials, databases,
+and other runtime data remain local and are never imported. `opencode.jsonc`
+includes personal Linear/Todoist MCP registrations; VM configurations must omit
+or disable these unless explicitly approved.
+
+The Herdr adapter activates only inside a Herdr pane. It reports the selected
+session and its child states from the OpenCode V2 TUI. It does not report headless
+`opencode run` activity, because the shared V2 server does not inherit each pane's
+Herdr environment. Do not reinstall Herdr's bundled V1 OpenCode integration.
 
 Edits, atomic file replacements, and resources within installed skill folders are
 live. Run `make` after adding or removing a skill or to repair links. A source
@@ -60,6 +72,7 @@ folder outside the native skills directory, run `make`, then move it back.
 make                         # deploy or refresh the shared links
 make check                   # refresh path aliases and dry-run without changing installed paths
 make test                    # test deployment and preservation in a temporary home
+make test-herdr              # test the OpenCode V2 Herdr adapter (requires Node.js)
 make unstow                  # remove managed links
 make TARGET=/path/to/home     # deploy for another home
 ```
@@ -68,5 +81,16 @@ make TARGET=/path/to/home     # deploy for another home
 without changing installed links. A conflicting reinstall leaves working links in place.
 Its target home must already exist; `make unstow` is a no-op for a missing home.
 
-The baseline commit preserves the original OpenCode configuration. Shared harness
-wiring and T3 V2 workflow changes belong in the subsequent migration.
+## Moving OpenCode configuration from dotfiles
+
+Run this once on an existing host:
+
+```bash
+make migrate-opencode DOTFILES_DIR="$HOME/dotfiles"
+```
+
+The handoff replaces only links to the old dotfiles OpenCode paths, then installs
+all shared configuration. It refuses unmanaged files and changed dotfiles sources;
+reconcile those changes first. A failed installation restores the old links.
+Recognized dangling links left after updating dotfiles are supported too.
+`TARGET` is honored, and repeated migration is safe. Fresh machines need only `make`.
