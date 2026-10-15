@@ -31,7 +31,6 @@
 * **Behavior over implementation**: test observable behavior, not internal details.
 * **Avoid brittle tests**: prefer assertions that survive refactoring.
 * **Bug discipline**: add a regression test for fixes; use direct checks when automation is impractical.
-* **Test dependencies**: install missing verification tools. Prefer a temporary `nix shell`; downloads are allowed.
 
 ## Refactoring
 * **Scout rule**: leave touched code cleaner; keep cleanup within the task's scope.
@@ -39,6 +38,7 @@
 * **Refactoring**: refactor to simplify or safeguard the requested change.
 
 ## Workflow
+* **Dev environments**: when Nix is available, use the project's Nix dev shell or add a minimal one.
 * **Isolation first**: implement in a worktree; reuse the current isolated checkout. In T3, use its worktree tools to keep the thread bound to the checkout. Outside T3, use `wt switch --create <branch>`. Merge only after checks pass.
 * **Planning**: use task lists when they help.
 * **Verify**: don't declare success without evidence (tests, logs, or observable behavior).
