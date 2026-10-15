@@ -90,7 +90,6 @@ for this work.
 - Follow T3's injected orchestration instructions and tool contracts. Use `delegate_task` for cross-provider work and separate child worktrees; native same-provider delegation is suitable only when it supports the selected model and isolation is unnecessary.
 - T3 children receive the supplied brief, not the parent conversation. Worktrees start from the parent local commit, without uncommitted edits. Supply needed context and scoped patches explicitly.
 - Prefer async delegation and completion notifications; retain task IDs. Create top-level conversations only when the user asks for separate conversations.
-- Run parallel implementation via `parallel-work`.
 - The primary merges changes, resolves conflicts, and verifies the combined result.
 
 ## Review
