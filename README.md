@@ -74,17 +74,3 @@ make TARGET=/path/to/home     # deploy for another home
 `make check` includes newly added skills. It updates only the ignored path aliases,
 without changing installed links. A conflicting reinstall leaves working links in place.
 Its target home must already exist; `make unstow` is a no-op for a missing home.
-
-## Moving OpenCode configuration from dotfiles
-
-Run this once on an existing host:
-
-```bash
-make migrate-opencode DOTFILES_DIR="$HOME/dotfiles"
-```
-
-The handoff replaces only links to the old dotfiles OpenCode paths, then installs
-all shared configuration. It refuses unmanaged files and changed dotfiles sources;
-reconcile those changes first. A failed installation restores the old links.
-Recognized dangling links left after updating dotfiles are supported too.
-`TARGET` is honored, and repeated migration is safe. Fresh machines need only `make`.
