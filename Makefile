@@ -1,4 +1,4 @@
-.PHONY: all install check test test-herdr migrate-opencode unstow
+.PHONY: all install check test migrate-opencode unstow
 
 TARGET ?= $(HOME)
 STOW ?= stow
@@ -26,9 +26,6 @@ check:
 test:
 	@bash tests/test-deploy.sh
 	@bash tests/test-opencode-migration.sh
-
-test-herdr:
-	@node --test tests/test-herdr-opencode.mjs
 
 migrate-opencode:
 	@bash scripts/migrate-opencode.sh "$(TARGET)" "$(DOTFILES_DIR)"

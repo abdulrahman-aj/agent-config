@@ -68,7 +68,7 @@ if migrate STOW="$scratch/failing-stow"; then fail "late install failure was ign
 assert_legacy_links
 
 # Support upgrading dotfiles first, leaving a recognized dangling link behind.
-rm "$legacy/home/.config/opencode/herdr-report.js"
+rm "$legacy/home/.config/opencode/opencode.jsonc"
 migrate || { cat "$scratch/migration.log" >&2; fail "migration failed"; }
 migrate || { cat "$scratch/migration.log" >&2; fail "repeated migration failed"; }
 while IFS= read -r -d '' config; do

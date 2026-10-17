@@ -17,7 +17,7 @@ Dotfiles can bootstrap the same checkout with `make agents`. No harness is insta
 ## One source
 
 Edit `AGENTS.md` for personal instructions, `skills/<name>/SKILL.md` for skills,
-and `opencode/` for OpenCode configuration and its Herdr TUI integration.
+and `opencode/` for OpenCode configuration.
 Keep each skill's scripts, references, and other resources in the same folder.
 
 | Installed path | Source |
@@ -40,11 +40,6 @@ Only repository-owned configuration is deployed. OpenCode credentials, databases
 and other runtime data remain local and are never imported. `opencode.jsonc`
 includes personal Linear/Todoist MCP registrations; VM configurations must omit
 or disable these unless explicitly approved.
-
-The Herdr adapter activates only inside a Herdr pane. It reports the selected
-session and its child states from the OpenCode V2 TUI. It does not report headless
-`opencode run` activity, because the shared V2 server does not inherit each pane's
-Herdr environment. Do not reinstall Herdr's bundled V1 OpenCode integration.
 
 Edits, atomic file replacements, and resources within installed skill folders are
 live. Run `make` after adding or removing a skill or to repair links. A source
@@ -72,7 +67,6 @@ folder outside the native skills directory, run `make`, then move it back.
 make                         # deploy or refresh the shared links
 make check                   # refresh path aliases and dry-run without changing installed paths
 make test                    # test deployment and preservation in a temporary home
-make test-herdr              # test the OpenCode V2 Herdr adapter (requires Node.js)
 make unstow                  # remove managed links
 make TARGET=/path/to/home     # deploy for another home
 ```
