@@ -20,7 +20,7 @@ mkdir -p "$checkout/scripts" "$checkout/global/skills/example" "$checkout/global
 cp "$repo/Makefile" "$checkout/Makefile"
 cp "$repo/scripts/link-shared.sh" "$checkout/scripts/"
 cp "$repo/home/.config/opencode/cli.json" "$repo/home/.config/opencode/opencode.jsonc" "$checkout/home/.config/opencode/"
-cp "$repo/home/.t3/userdata/settings.json" "$repo/home/.t3/userdata/keybindings.json" "$checkout/home/.t3/userdata/"
+cp "$repo/home/.t3/userdata/settings.json" "$checkout/home/.t3/userdata/"
 printf 'instructions\n' > "$checkout/global/AGENTS.md"
 printf 'skill\n' > "$checkout/global/skills/example/SKILL.md"
 printf 'system skill\n' > "$scratch/omarchy/SKILL.md"

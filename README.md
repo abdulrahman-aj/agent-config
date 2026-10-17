@@ -27,7 +27,6 @@ by `scripts/link-shared.sh` instead — anything 1:1 lives under `home/`.
 | `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
-| `~/.t3/userdata/keybindings.json` | `home/.t3/userdata/keybindings.json` |
 
 Native directories remain real, so separately installed skills coexist.
 
