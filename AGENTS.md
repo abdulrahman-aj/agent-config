@@ -39,14 +39,13 @@
 
 ## Workflow
 * **Dev environments**: when Nix is available, use the project's Nix dev shell or add a minimal one.
-* **Isolation first**: implement in a worktree; reuse the current isolated checkout. In T3, use its worktree tools to keep the thread bound to the checkout. Outside T3, use `wt switch --create <branch>`. Merge only after checks pass.
-* **Planning**: use task lists when they help.
+* **Isolation**: use a worktree for parallel changes.
 * **Verify**: don't declare success without evidence (tests, logs, or observable behavior).
 * **Root cause**: solve the underlying cause, not the symptom.
 * **Tracer bullets**: build a thin end-to-end slice before filling in details.
 * **Reversible first**: flag hard-to-reverse decisions before making them.
 * **Port omissions**: explicitly document every omitted upstream behavior in the target repository.
-* **Reuse context**: carry forward the brief, findings, and unresolved questions; follow the runtime's task lifecycle.
+* **Reuse context**: carry the brief, findings, and unresolved questions across threads.
 * **Delegation**: use cheaper suitable workers for routine tasks, including verification; keep key decisions and synthesis with the primary. Keep trivial work local.
 
 ## Automation
@@ -62,61 +61,23 @@
 
 # Agent delegation
 
-Delegate when it saves time or adds expertise. Keep key decisions and work that
-needs much of the current conversation in the primary agent.
-
-## Routing
-
-In T3, discover available provider instances, models, options, and child-task
-support with `orchestrator_capabilities`. Use returned IDs rather than assuming
-OpenCode agent names or native model lists cover all choices. Outside T3, check
-the native worker's configured model before choosing it.
-
-- Muse: default worker, including large changes and difficult debugging.
-- GLM: alternative when Muse's data-use terms are unsuitable, or for a second opinion.
-- Sol: difficult reasoning, engineering, or a second opinion.
-- Astra: only when explicitly requested, including for reviews.
-
-Do not assume another model is better. Before switching, check why the worker
-failed and carry the missing context or tools into the next attempt.
-
-Follow the project's provider restrictions for workers and reviewers. Muse Contributor
-may use submitted content for training: ask before first use unless already approved
-for this work.
-
-## Execution
-
-- Give each worker a clear task and checks to run. Avoid assigning duplicate tasks.
-- Follow T3's injected orchestration instructions and tool contracts. Use `delegate_task` for cross-provider work and separate child worktrees; native same-provider delegation is suitable only when it supports the selected model and isolation is unnecessary.
-- T3 children receive the supplied brief, not the parent conversation. Worktrees start from the parent local commit, without uncommitted edits. Supply needed context and scoped patches explicitly.
-- Prefer async delegation and completion notifications; retain task IDs. Create top-level conversations only when the user asks for separate conversations.
-- The primary merges changes, resolves conflicts, and verifies the combined result.
+- Delegate when it saves time or adds expertise.
+- Keep key decisions and context-heavy work in the primary agent.
+- Give each worker a clear task and checks to run.
+- Only these workers:
+  - Muse 1.3 xhigh (`opencode-go/muse-spark-1.3-contributor`): default worker. May train on your content: ask before first use unless already approved.
+  - GLM 5.3 Flash max (`opencode-go/glm-5.3-flash`): when Muse's data terms don't fit, or for a second opinion.
+  - Sol 6.1 high (Codex `gpt-6.1-sol`): hard reasoning, or a second opinion.
 
 ## Review
 
-Self-review and run checks. Add an independent reviewer when a second opinion would
-help establish correctness, especially when mistakes would be costly. Add more only
-for a specific unresolved concern or the user's request. Follow requested counts,
-including no delegation. Use `ask-for-review`; check findings before acting on them.
+- Reviewer at each milestone (YAGNI: is the change needed, would smaller suffice?); extra reviewers only for a specific concern or on request.
 
 # Shared instructions and skills
 
-Personal instructions are maintained in `~/agent-config/AGENTS.md`, linked to
-`~/.agents/AGENTS.md` and the harness instruction paths. Shared skills live in
-`~/agent-config/skills/`; individual skill folders are linked into the native
-skill directories, alongside separately installed skills.
-Portable OpenCode configuration and its Herdr TUI integration live in `opencode/`.
-Read a relevant `SKILL.md` before using it. If native discovery is unavailable,
-inspect `~/.agents/skills/` and load only the skills needed for the task.
-
-Edit the source checkout. Edits and resources within installed skills are live;
-run `make` after adding or removing a skill. An existing harness session may need
-to reload its context. Save project rules in the project's `AGENTS.md` and personal
-preferences in `~/agent-config/AGENTS.md`.
+Edit sources (`skills/`, `opencode/`), not deployed links: edits are live, but `make` after adding or removing, and reload the session. Project rules → project's `AGENTS.md`, personal → here.
 
 # Privilege elevation
 
-* **Defer root**: prepare and validate as the user; elevate only to continue or finish.
-* **Batch root ops**: combine related work in one reviewable elevation; never keep a root shell.
-* **Use pkexec**: request graphical approval; never wait for terminal password input.
-* **Stop when blocked**: if elevation fails or stalls, return one command and stop.
+* If `sudo -n true` succeeds, use root directly.
+* Otherwise, defer elevation and batch root ops via `pkexec`; never wait on terminal password input. If elevation stalls, return one command and stop.
