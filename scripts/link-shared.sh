@@ -51,11 +51,11 @@ declare -A pending=()
 # Desired fan-out links: target-relative path, then absolute source.
 declare -a dests=() srcs=()
 want() { dests+=("$1"); srcs+=("$2"); }
-want .agents/AGENTS.md "$repo/AGENTS.md"
-want .codex/AGENTS.md "$repo/AGENTS.md"
-want .claude/CLAUDE.md "$repo/AGENTS.md"
-want .config/opencode/AGENTS.md "$repo/AGENTS.md"
-for skill in "$repo"/skills/*; do
+want .agents/AGENTS.md "$repo/global/AGENTS.md"
+want .codex/AGENTS.md "$repo/global/AGENTS.md"
+want .claude/CLAUDE.md "$repo/global/AGENTS.md"
+want .config/opencode/AGENTS.md "$repo/global/AGENTS.md"
+for skill in "$repo"/global/skills/*; do
     [[ -f "$skill/SKILL.md" ]] || continue
     name="$(basename "$skill")"
     want ".agents/skills/$name" "$skill"

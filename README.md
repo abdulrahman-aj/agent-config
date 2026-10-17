@@ -12,19 +12,19 @@ make -C ~/agent-config setup  # helper tooling (ccusage)
 
 ## One source
 
-Edit `AGENTS.md` for personal instructions, `skills/<name>/SKILL.md` for skills,
+Edit `global/AGENTS.md` for personal instructions, `global/skills/<name>/SKILL.md` for skills,
 and `home/` for files stowed 1:1. Fan-outs (one source, many homes) are linked
 by `scripts/link-shared.sh` instead — anything 1:1 lives under `home/`.
 
 | Installed path | Source |
 | --- | --- |
-| `~/.agents/AGENTS.md` | `AGENTS.md` |
-| `~/.codex/AGENTS.md` | `AGENTS.md` |
-| `~/.claude/CLAUDE.md` | `AGENTS.md` |
-| `~/.config/opencode/AGENTS.md` | `AGENTS.md` |
-| `~/.agents/skills/<name>` | `skills/<name>/` |
-| `~/.claude/skills/<name>` | `skills/<name>/` |
-| `~/.config/opencode/skills/<name>` | `skills/<name>/` |
+| `~/.agents/AGENTS.md` | `global/AGENTS.md` |
+| `~/.codex/AGENTS.md` | `global/AGENTS.md` |
+| `~/.claude/CLAUDE.md` | `global/AGENTS.md` |
+| `~/.config/opencode/AGENTS.md` | `global/AGENTS.md` |
+| `~/.agents/skills/<name>` | `global/skills/<name>/` |
+| `~/.claude/skills/<name>` | `global/skills/<name>/` |
+| `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
 | `~/.t3/userdata/keybindings.json` | `home/.t3/userdata/keybindings.json` |
