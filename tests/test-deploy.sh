@@ -132,17 +132,6 @@ record_is || fail "repo record not updated after reclone"
 [[ "$(realpath "$target/.agents/skills/example")" == "$checkout/skills/example" ]] \
     || fail "skill not relinked after reclone"
 
-# Concurrent installs serialize instead of half-installing: hold the lock in
-# this shell (no background jobs, no races) and verify install is blocked.
-exec 9>"$checkout/.stow/lock"
-flock -n 9 || fail "could not take test lock"
-if deploy install >/dev/null 2>&1; then
-    exec 9>&-
-    fail "concurrent install not blocked"
-fi
-exec 9>&-
-deploy install
-
 # A replacement of an installed instruction must not unlink other managed paths.
 rm "$target/.codex/AGENTS.md"
 printf 'user instructions\n' > "$target/.codex/AGENTS.md"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Keep the deployed tree consistent with the prepared package before Stow runs.
-# Removes links left stale by moves, deletions, and unpackaged sources; aborts
+# Removes links left stale by moves and deletions; aborts
 # on genuine conflicts instead of letting Stow fail cryptically. Relocation is
 # detected via a record outside the checkout, so re-cloning elsewhere works too.
 # Usage: repair-stale.sh [--check] TARGET
@@ -11,17 +11,21 @@
 set -euo pipefail
 shopt -s nullglob
 
+record_path() {  # $1 = target home
+    local cache="${XDG_CACHE_HOME:-$HOME/.cache}/agent-config"
+    printf '%s' "$cache/repo.$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
+}
+
 if [[ "${1:-}" == record ]]; then
     target="$(realpath -m "${2:?target home required}")"
-    cache="${XDG_CACHE_HOME:-$HOME/.cache}/agent-config"
-    mkdir -p "$cache"
-    pwd -P > "$cache/repo.$(printf '%s' "$target" | cksum | cut -d' ' -f1)"
+    path="$(record_path "$target")"
+    mkdir -p "${path%/*}"
+    pwd -P > "$path"
     exit 0
 fi
 if [[ "${1:-}" == forget ]]; then
     target="$(realpath -m "${2:?target home required}")"
-    cache="${XDG_CACHE_HOME:-$HOME/.cache}/agent-config"
-    rm -f "$cache/repo.$(printf '%s' "$target" | cksum | cut -d' ' -f1)"
+    rm -f "$(record_path "$target")"
     exit 0
 fi
 
@@ -33,7 +37,7 @@ fi
 target="$(realpath -m "${1:?target home required}")"
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 package="$repo/.stow/home"
-record="${XDG_CACHE_HOME:-$HOME/.cache}/agent-config/repo.$(printf '%s' "$target" | cksum | cut -d' ' -f1)"
+record="$(record_path "$target")"
 roots=(.agents .claude .codex .config/opencode)
 acted=0
 # TARGET paths slated for removal in --check mode (already gone on install).
@@ -62,23 +66,19 @@ managed_links() {
     done
 }
 
-# Sources currently packaged, by resolved path.
-declare -A packaged=()
+# Drop ghost aliases (source removed). Not optional: without this, Stow -D
+# aborts with "unstow_contents() called with non-directory path" (verified by
+# disabling this loop and running the suite).
 while IFS= read -r -d '' alias; do
     [[ -L "$alias" ]] || continue
-    # Ghost aliases (source removed) never match a managed link; drop them so
-    # a removed shared skill cannot masquerade as a live conflict.
-    if [[ ! -e "$alias" ]]; then
-        acted=1
-        if (( check )); then
-            note "would drop stale alias: $alias"
-        else
-            note "dropping stale alias: $alias"
-            rm -- "$alias"
-        fi
-        continue
+    [[ -e "$alias" ]] && continue
+    acted=1
+    if (( check )); then
+        note "would drop stale alias: $alias"
+    else
+        note "dropping stale alias: $alias"
+        rm -- "$alias"
     fi
-    packaged["$(realpath "$alias")"]=1
 done < <(find "$package" -mindepth 1 -print0)
 
 # 1. Relocated checkout: drop links pointing into the previous checkout path.
@@ -120,20 +120,6 @@ while IFS= read -r -d '' alias; do
     fi
     fail "conflicting path: $counterpart (not a managed link). Move it aside and rerun 'make'."
 done < <(find "$package" -mindepth 1 -print0)
-
-# 4. Report live links into this repo that nothing packages (e.g. a skill that
-#    lost its SKILL.md). Left alone; this only makes the drift visible.
-while IFS= read -r -d '' link; do
-    [[ -e "$link" ]] || continue
-    resolved="$(realpath "$link")"
-    case "$resolved" in
-        "$repo"/*)
-            if [[ -z "${packaged[$resolved]:-}" ]]; then
-                note "orphaned link (no longer packaged, left alone): $link"
-            fi
-            ;;
-    esac
-done < <(managed_links)
 
 if (( check )) && (( acted )); then
     note "run 'make install' to apply these removals"
