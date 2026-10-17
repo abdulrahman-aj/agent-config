@@ -46,4 +46,4 @@ Use the cheapest model smart enough for the task. Only these:
 |---|---|---|---|
 | Sol 6.1 (`gpt-6.1-sol` `high` via Codex) | hard reasoning | highest | high |
 | Muse 1.3 (`opencode-go/muse-spark-1.3-contributor` `xhigh`) | default | high | low |
-| GLM 5.3 Flash (`opencode-go/glm-5.3-flash` `max`) | fallback | high | low |
+| GLM 5.3 Flash (`opencode-go/glm-5.3-flash` `high`) | fallback | high | low |

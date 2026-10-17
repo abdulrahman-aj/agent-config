@@ -2,9 +2,9 @@
 set -euo pipefail
 shopt -s nullglob
 
-repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 package="$repo/.stow/home"
-# Keep old aliases until installation has checked conflicts and unstowed them.
+# The old alias set stays in place until install unstows and restows it.
 mkdir -p "$package/.codex"
 
 for root in .agents .claude .config/opencode; do
