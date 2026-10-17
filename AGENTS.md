@@ -1,123 +1,49 @@
-# Personal agent instructions
-
 # Personal
 
-* Name: Abdulrahman.
-* Be concise. Skip preambles and postambles.
-* Lead with the outcome; avoid play-by-play summaries.
-* **Ask early**: ask when choices materially affect scope, behavior, cost, or reversibility; decide routine details.
-* Prefer multiple-choice questions. Batch up to 5 related questions.
-* Sort recommendations strongest first, labeling the top choice "(recommended)".
-* Include a TL;DR only for large or multi-file changes.
+* **Prose**: state the outcome, be concise.
+* **Ask early** on scope, behavior, cost, reversibility.
+* **Questions**: multiple-choice, strongest first `(recommended)`; batch up to 5.
 
-# Principles
-
-## Software Design
-* **Deep modules**: small, stable interfaces hiding rich implementations. Push complexity down; expose capabilities, not decisions.
-* **Simplicity wins**: complexity compounds. Prefer the simplest correct solution; reconsider anything clever, brittle, or surprising.
-* **Abstractions**: don't introduce one until it clearly reduces complexity. Duplicate first; abstract when a stable concept emerges.
-* **Readability**: prefer readable code over compactness. Extract non-trivial logic instead of embedding it inline.
+# Software Design
+* **YAGNI**: default to NO; build only what's needed and NO MORE.
+* **Deep modules**: small, stable interface hiding a rich implementation.
+* **Simplicity wins**: simplest correct solution; nothing clever, brittle, or surprising.
+* **Abstractions**: duplicate first; abstract only when it reduces complexity.
 * **Naming**: unclear names signal unclear abstractions. Rethink the design.
-* **Locality**: behavior should be understandable from nearby code. Avoid hidden side effects and distant dependencies.
-* **Comments**: explain why, not what. Reserve comments for design rationale, invariants, non-obvious performance decisions, and external constraints.
 
-## Code Style
-* **Nesting**: reduce nesting for readability, not arbitrary limits.
-* **Line length**: prefer lines under 100 characters.
-* **Scripts**: prefer standalone files over long shell or Python strings.
+# Code Style
+* **Readability**: prefer readable code over compactness.
+* **Locality of behavior**: group related code nearby.
+* **Comments**: why, not what: rationale, invariants, performance, constraints.
+* **Shell**: do not embed Python in `.sh` files; write `.py` files.
 
-## Testing
-* **Test what you fear**: prioritize code most likely to break or that took real effort to get right.
-* **Behavior over implementation**: test observable behavior, not internal details.
-* **Avoid brittle tests**: prefer assertions that survive refactoring.
-* **Bug discipline**: add a regression test for fixes; use direct checks when automation is impractical.
+# Testing
+* **Always verify**: no success without evidence.
+* **Automated evidence**: committed tests; manual only if automation is impractical.
+* **Test what you fear**: prioritize code most likely to break.
+* **Behavior over implementation**: test behavior, not internals; behavior survives refactoring.
 
-## Refactoring
-* **Scout rule**: leave touched code cleaner; keep cleanup within the task's scope.
-* **Chesterton's fence**: before removing an existing constraint, understand why it exists.
-* **Refactoring**: refactor to simplify or safeguard the requested change.
+# Refactoring
+* **Before the change**: refactor to simplify or de-risk it.
+* **Gardening**: look for YAGNI; aim to delete more than you add.
+* **Scout rule**: leave it better than you found it; stay in scope.
+* **Chesterton's fence**: understand why it exists before you remove it.
 
-## Workflow
-* **Dev environments**: when Nix is available, use the project's Nix dev shell or add a minimal one.
-* **Isolation first**: implement in a worktree; reuse the current isolated checkout. In T3, use its worktree tools to keep the thread bound to the checkout. Outside T3, use `wt switch --create <branch>`. Merge only after checks pass.
-* **Planning**: use task lists when they help.
-* **Verify**: don't declare success without evidence (tests, logs, or observable behavior).
-* **Root cause**: solve the underlying cause, not the symptom.
-* **Tracer bullets**: build a thin end-to-end slice before filling in details.
-* **Reversible first**: flag hard-to-reverse decisions before making them.
-* **Port omissions**: explicitly document every omitted upstream behavior in the target repository.
-* **Reuse context**: carry forward the brief, findings, and unresolved questions; follow the runtime's task lifecycle.
-* **Delegation**: use cheaper suitable workers for routine tasks, including verification; keep key decisions and synthesis with the primary. Keep trivial work local.
+# Workflow
+* **Dev environments**: use the project's Nix dev shell, or add one if none exists.
+* **Reusable tasks**: work through deterministic scripts (e.g. interact, debug, verify); expose additions via Makefile or similar; don't reinvent.
+* **Delegate**: for speed, cost, or expertise; brief fully: verification, findings, open questions.
+* **Bug discipline**: solve the root cause, not the symptom; every fix gets a regression test.
+* **Porting**: document omissions and divergences in the target repository.
+* **Review**: before the user sees it, by a different family (e.g. Muse or GLM reviews Sol); YAGNI first.
+* **PRs only**: land work via PRs; never push to main or rewrite history.
 
-## Automation
-* **Automate friction**: turn recurring manual work and preventable failures into project-local guardrails.
-* **Evidence first**: automate observed friction, not hypothetical problems. Ask before adding dependencies or changing shared workflows.
-* **Recurring commands**: use the existing task runner for frequently repeated commands.
+# Model selection
 
-## Collaboration
-* **Approval required**: get explicit user approval before Git commits or destructive actions.
+Use the cheapest model smart enough for the task. Only these:
 
-## Misc
-* **Project tasks first**: check for project tasks (e.g. Makefiles, Taskfiles) before running commands.
-
-# Agent delegation
-
-Delegate when it saves time or adds expertise. Keep key decisions and work that
-needs much of the current conversation in the primary agent.
-
-## Routing
-
-In T3, discover available provider instances, models, options, and child-task
-support with `orchestrator_capabilities`. Use returned IDs rather than assuming
-OpenCode agent names or native model lists cover all choices. Outside T3, check
-the native worker's configured model before choosing it.
-
-- Muse: default worker, including large changes and difficult debugging.
-- GLM: alternative when Muse's data-use terms are unsuitable, or for a second opinion.
-- Sol: difficult reasoning, engineering, or a second opinion.
-- Astra: only when explicitly requested, including for reviews.
-
-Do not assume another model is better. Before switching, check why the worker
-failed and carry the missing context or tools into the next attempt.
-
-Follow the project's provider restrictions for workers and reviewers. Muse Contributor
-may use submitted content for training: ask before first use unless already approved
-for this work.
-
-## Execution
-
-- Give each worker a clear task and checks to run. Avoid assigning duplicate tasks.
-- Follow T3's injected orchestration instructions and tool contracts. Use `delegate_task` for cross-provider work and separate child worktrees; native same-provider delegation is suitable only when it supports the selected model and isolation is unnecessary.
-- T3 children receive the supplied brief, not the parent conversation. Worktrees start from the parent local commit, without uncommitted edits. Supply needed context and scoped patches explicitly.
-- Prefer async delegation and completion notifications; retain task IDs. Create top-level conversations only when the user asks for separate conversations.
-- Run parallel implementation via `parallel-work`.
-- The primary merges changes, resolves conflicts, and verifies the combined result.
-
-## Review
-
-Self-review and run checks. Add an independent reviewer when a second opinion would
-help establish correctness, especially when mistakes would be costly. Add more only
-for a specific unresolved concern or the user's request. Follow requested counts,
-including no delegation. Use `ask-for-review`; check findings before acting on them.
-
-# Shared instructions and skills
-
-Personal instructions are maintained in `~/agent-config/AGENTS.md`, linked to
-`~/.agents/AGENTS.md` and the harness instruction paths. Shared skills live in
-`~/agent-config/skills/`; individual skill folders are linked into the native
-skill directories, alongside separately installed skills.
-Portable OpenCode configuration and its Herdr TUI integration live in `opencode/`.
-Read a relevant `SKILL.md` before using it. If native discovery is unavailable,
-inspect `~/.agents/skills/` and load only the skills needed for the task.
-
-Edit the source checkout. Edits and resources within installed skills are live;
-run `make` after adding or removing a skill. An existing harness session may need
-to reload its context. Use `remember` to
-persist project rules in the project's `AGENTS.md` and personal rules here.
-
-# Privilege elevation
-
-* **Defer root**: prepare and validate as the user; elevate only to continue or finish.
-* **Batch root ops**: combine related work in one reviewable elevation; never keep a root shell.
-* **Use pkexec**: request graphical approval; never wait for terminal password input.
-* **Stop when blocked**: if elevation fails or stalls, return one command and stop.
+| Worker | Role | Smarts | Cost |
+|---|---|---|---|
+| Sol 6.1 (`gpt-6.1-sol` `high` via Codex) | hard reasoning | highest | high |
+| Muse 1.3 (`opencode-go/muse-spark-1.3-contributor` `xhigh`) | default | high | low |
+| GLM 5.3 Flash (`opencode-go/glm-5.3-flash` `high`) | fallback | high | low |

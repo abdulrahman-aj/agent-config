@@ -4,16 +4,19 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
+export XDG_CACHE_HOME="$scratch/cache"
 checkout="$scratch/checkout with spaces"
 target="$scratch/home with spaces"
 roots=(.agents .claude .config/opencode)
+record_key="$(printf '%s' "$target" | cksum | cut -d' ' -f1)"
+record_is() { [[ "$(cat "$XDG_CACHE_HOME/agent-config/repo.$record_key")" == "$(realpath "$checkout")" ]]; }
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 deploy() { make -s -C "$checkout" "$@" TARGET="$target" >/dev/null; }
 
 mkdir -p "$checkout/scripts" "$checkout/skills/example" "$scratch/omarchy"
 cp "$repo/Makefile" "$checkout/Makefile"
-cp "$repo/scripts/prepare-stow.sh" "$checkout/scripts/"
+cp "$repo/scripts/prepare-stow.sh" "$repo/scripts/repair-stale.sh" "$checkout/scripts/"
 cp -R "$repo/opencode" "$checkout/opencode"
 printf 'instructions\n' > "$checkout/AGENTS.md"
 printf 'skill\n' > "$checkout/skills/example/SKILL.md"
@@ -26,6 +29,7 @@ done
 
 deploy install
 deploy install
+record_is || fail "repo record wrong"
 deploy check
 while IFS= read -r -d '' config; do
     relative="${config#"$checkout/opencode/"}"
@@ -82,6 +86,51 @@ deploy install
 for root in "${roots[@]}"; do
     [[ ! -L "$target/$root/skills/new-skill" ]] || fail "removed skill link remains"
 done
+
+# A removed shared skill leaves a same-name user directory alone.
+rm -f "$target/.agents/skills/relocated"
+mkdir "$checkout/skills/relocated"
+printf 'shared skill\n' > "$checkout/skills/relocated/SKILL.md"
+deploy install
+rm -rf "$checkout/skills/relocated"
+rm -f "$target/.agents/skills/relocated"
+mkdir "$target/.agents/skills/relocated"
+printf 'user skill\n' > "$target/.agents/skills/relocated/SKILL.md"
+deploy install
+grep -qx 'user skill' "$target/.agents/skills/relocated/SKILL.md" || fail "user dir changed"
+[[ ! -L "$target/.agents/skills/relocated" ]] || fail "user dir replaced by link"
+rm -rf "$target/.agents/skills/relocated"
+
+# Moving the checkout then installing cleans stale links and relinks fresh.
+mv "$checkout" "$scratch/moved checkout"
+checkout="$scratch/moved checkout"
+deploy install
+record_is || fail "repo record not updated after move"
+for root in "${roots[@]}"; do
+    [[ "$(realpath "$target/$root/skills/example")" == "$checkout/skills/example" ]] \
+        || fail "skill not relinked after move: $root"
+done
+[[ "$(realpath "$target/.codex/AGENTS.md")" == "$checkout/AGENTS.md" ]] \
+    || fail "instructions not relinked after move"
+[[ -z "$(find "$target/.agents" "$target/.claude" "$target/.codex" "$target/.config" -xtype l 2>/dev/null)" ]] \
+    || fail "dangling links remain after move"
+
+# `check` reports stale links without touching them; install applies the fix.
+mv "$checkout" "$scratch/moved checkout 2"
+checkout="$scratch/moved checkout 2"
+out="$(make -s -C "$checkout" check TARGET="$target" 2>&1 || true)"
+grep -q "would remove stale link" <<<"$out" || fail "check did not report stale links"
+grep -q "run 'make install' to apply" <<<"$out" || fail "check gave no install hint"
+deploy install
+
+# Losing the checkout entirely then re-cloning elsewhere still installs cleanly.
+cp -R "$checkout" "$scratch/recloned checkout"
+rm -rf "$checkout"
+checkout="$scratch/recloned checkout"
+deploy install
+record_is || fail "repo record not updated after reclone"
+[[ "$(realpath "$target/.agents/skills/example")" == "$checkout/skills/example" ]] \
+    || fail "skill not relinked after reclone"
 
 # A replacement of an installed instruction must not unlink other managed paths.
 rm "$target/.codex/AGENTS.md"

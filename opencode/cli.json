@@ -6,6 +6,5 @@
   },
   "tabs": {
     "mode": "off"
-  },
-  "plugins": ["./herdr-tui"]
+  }
 }
