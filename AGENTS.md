@@ -111,8 +111,8 @@ inspect `~/.agents/skills/` and load only the skills needed for the task.
 
 Edit the source checkout. Edits and resources within installed skills are live;
 run `make` after adding or removing a skill. An existing harness session may need
-to reload its context. Use `remember` to
-persist project rules in the project's `AGENTS.md` and personal rules here.
+to reload its context. Save project rules in the project's `AGENTS.md` and personal
+preferences in `~/agent-config/AGENTS.md`.
 
 # Privilege elevation
 
