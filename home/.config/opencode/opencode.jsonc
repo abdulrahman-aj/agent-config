@@ -1,21 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "username": "Abdulrahman",
-  "update": "disable",
-  "mcp": {
-    "servers": {
-      "linear": {
-        "type": "remote",
-        "url": "https://mcp.linear.app/mcp"
-      },
-      "linear-source": {
-        "type": "remote",
-        "url": "https://mcp.linear.app/mcp"
-      },
-      "todoist": {
-        "type": "remote",
-        "url": "https://ai.todoist.net/mcp"
-      }
-    }
-  }
+  "update": "disable"
 }
