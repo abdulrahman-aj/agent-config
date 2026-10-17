@@ -12,7 +12,8 @@ make -C ~/agent-config
 ## One source
 
 Edit `AGENTS.md` for personal instructions, `skills/<name>/SKILL.md` for skills,
-and `opencode/` for OpenCode configuration.
+and `home/` for files stowed 1:1. Fan-outs (one source, many homes) are linked
+by `scripts/link-shared.sh` instead — anything 1:1 lives under `home/`.
 
 | Installed path | Source |
 | --- | --- |
@@ -23,7 +24,7 @@ and `opencode/` for OpenCode configuration.
 | `~/.agents/skills/<name>` | `skills/<name>/` |
 | `~/.claude/skills/<name>` | `skills/<name>/` |
 | `~/.config/opencode/skills/<name>` | `skills/<name>/` |
-| `~/.config/opencode/<file>` | `opencode/<file>` |
+| `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 
 Native directories remain real, so separately installed skills coexist.
 

@@ -14,10 +14,12 @@ record_is() { [[ "$(cat "$XDG_CACHE_HOME/agent-config/repo.$record_key")" == "$(
 fail() { echo "FAIL: $*" >&2; exit 1; }
 deploy() { make -s -C "$checkout" "$@" TARGET="$target" >/dev/null; }
 
-mkdir -p "$checkout/scripts" "$checkout/skills/example" "$scratch/omarchy"
+# Legacy double-hop links (via an intermediate alias, as the old farm made)
+# must be normalized to a single hop on install.
+mkdir -p "$checkout/scripts" "$checkout/skills/example" "$checkout/home/.config/opencode" "$scratch/omarchy"
 cp "$repo/Makefile" "$checkout/Makefile"
-cp "$repo/scripts/prepare-stow.sh" "$repo/scripts/repair-stale.sh" "$checkout/scripts/"
-cp -R "$repo/opencode" "$checkout/opencode"
+cp "$repo/scripts/link-shared.sh" "$checkout/scripts/"
+cp "$repo/home/.config/opencode/cli.json" "$repo/home/.config/opencode/opencode.jsonc" "$checkout/home/.config/opencode/"
 printf 'instructions\n' > "$checkout/AGENTS.md"
 printf 'skill\n' > "$checkout/skills/example/SKILL.md"
 printf 'system skill\n' > "$scratch/omarchy/SKILL.md"
@@ -26,16 +28,21 @@ for root in "${roots[@]}"; do
     printf 'local skill\n' > "$target/$root/skills/local/SKILL.md"
     ln -s "$scratch/omarchy" "$target/$root/skills/omarchy"
 done
+ln -s "$checkout/skills/example" "$scratch/mid-skill"
+ln -s "$scratch/mid-skill" "$target/.agents/skills/example"
+mkdir -p "$target/.codex"
+ln -s "$checkout/AGENTS.md" "$scratch/mid-instructions"
+ln -s "$scratch/mid-instructions" "$target/.codex/AGENTS.md"
 
 deploy install
 deploy install
 record_is || fail "repo record wrong"
 deploy check
 while IFS= read -r -d '' config; do
-    relative="${config#"$checkout/opencode/"}"
-    [[ "$(realpath "$target/.config/opencode/$relative")" == "$config" ]] \
-        || fail "OpenCode config is not linked: $relative"
-done < <(find "$checkout/opencode" -type f -print0)
+    relative="${config#"$checkout/home/"}"
+    [[ "$(realpath "$target/$relative")" == "$config" ]] \
+        || fail "stowed file is not linked: $relative"
+done < <(find "$checkout/home" -type f -print0)
 for root in "${roots[@]}"; do
     [[ -d "$target/$root/skills" && ! -L "$target/$root/skills" ]] \
         || fail "native skills directory was replaced: $root"
@@ -45,6 +52,12 @@ for root in "${roots[@]}"; do
     [[ "$(readlink "$target/$root/skills/omarchy")" == "$scratch/omarchy" ]] \
         || fail "Omarchy link changed"
 done
+# Single hop: the link's immediate target, resolved from its own directory,
+# is the repo source itself — no intermediate farm links.
+[[ "$(realpath -m "$target/.agents/skills/$(readlink "$target/.agents/skills/example")")" == "$checkout/skills/example" ]] \
+    || fail "skill link is not single-hop"
+[[ "$(realpath -m "$target/.codex/$(readlink "$target/.codex/AGENTS.md")")" == "$checkout/AGENTS.md" ]] \
+    || fail "instruction link is not single-hop"
 
 # Atomic edits follow the source; resources within a linked skill are live too.
 printf 'updated instructions\n' > "$checkout/replacement.md"
@@ -112,6 +125,8 @@ for root in "${roots[@]}"; do
 done
 [[ "$(realpath "$target/.codex/AGENTS.md")" == "$checkout/AGENTS.md" ]] \
     || fail "instructions not relinked after move"
+[[ "$(realpath "$target/.config/opencode/cli.json")" == "$checkout/home/.config/opencode/cli.json" ]] \
+    || fail "stowed config not relinked after move"
 [[ -z "$(find "$target/.agents" "$target/.claude" "$target/.codex" "$target/.config" -xtype l 2>/dev/null)" ]] \
     || fail "dangling links remain after move"
 
@@ -136,15 +151,15 @@ record_is || fail "repo record not updated after reclone"
 rm "$target/.codex/AGENTS.md"
 printf 'user instructions\n' > "$target/.codex/AGENTS.md"
 if deploy install 2>"$scratch/conflict.log"; then
-    fail "Stow accepted conflicting instructions"
+    fail "install accepted conflicting instructions"
 fi
 grep -qx 'user instructions' "$target/.codex/AGENTS.md" || fail "conflicting file changed"
 [[ -L "$target/.agents/skills/example" ]] || fail "instruction conflict unlinked skills"
 rm "$target/.codex/AGENTS.md"
 deploy install
-deploy unstow
-deploy unstow
-[[ ! -L "$target/.config/opencode/cli.json" ]] || fail "OpenCode config link remains"
+deploy uninstall
+deploy uninstall
+[[ ! -L "$target/.config/opencode/cli.json" ]] || fail "stowed config link remains"
 for root in "${roots[@]}"; do
     [[ ! -L "$target/$root/skills/example" ]] || fail "managed link remains"
     grep -qx 'local skill' "$target/$root/skills/local/SKILL.md" || fail "local skill lost"
@@ -154,6 +169,6 @@ if make -s -C "$checkout" check TARGET="$scratch/nonexistent" \
     >"$scratch/missing-target.log" 2>&1; then
     fail "check accepted a missing target"
 fi
-make -s -C "$checkout" unstow TARGET="$scratch/nonexistent" >/dev/null
-[[ ! -e "$scratch/nonexistent" ]] || fail "check or unstow created the missing target"
+make -s -C "$checkout" uninstall TARGET="$scratch/nonexistent" >/dev/null
+[[ ! -e "$scratch/nonexistent" ]] || fail "check or uninstall created the missing target"
 echo "Agent Stow deployment test passed"
