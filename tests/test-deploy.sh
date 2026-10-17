@@ -16,10 +16,11 @@ deploy() { make -s -C "$checkout" "$@" TARGET="$target" >/dev/null; }
 
 # Legacy double-hop links (via an intermediate alias, as the old farm made)
 # must be normalized to a single hop on install.
-mkdir -p "$checkout/scripts" "$checkout/skills/example" "$checkout/home/.config/opencode" "$scratch/omarchy"
+mkdir -p "$checkout/scripts" "$checkout/skills/example" "$checkout/home/.config/opencode" "$checkout/home/.t3/userdata" "$scratch/omarchy"
 cp "$repo/Makefile" "$checkout/Makefile"
 cp "$repo/scripts/link-shared.sh" "$checkout/scripts/"
 cp "$repo/home/.config/opencode/cli.json" "$repo/home/.config/opencode/opencode.jsonc" "$checkout/home/.config/opencode/"
+cp "$repo/home/.t3/userdata/settings.json" "$repo/home/.t3/userdata/keybindings.json" "$checkout/home/.t3/userdata/"
 printf 'instructions\n' > "$checkout/AGENTS.md"
 printf 'skill\n' > "$checkout/skills/example/SKILL.md"
 printf 'system skill\n' > "$scratch/omarchy/SKILL.md"
