@@ -1,0 +1,27 @@
+{
+  "providerModelPreferences": {
+    "opencode": {
+      "hiddenModels": [],
+      "modelOrder": [
+        "opencode-go/muse-spark-1.3-contributor",
+        "opencode-go/glm-5.3-flash"
+      ]
+    }
+  },
+  "projectSettingsFolded": true,
+  "autoResumeLimitedThreads": true,
+  "defaultTheme": "omarchy",
+  "defaultThemeSetAt": "2026-10-16T18:15:17.100Z",
+  "providerInstances": {
+    "opencode": {
+      "driver": "opencode",
+      "enabled": true,
+      "config": {
+        "binaryPath": "opencode",
+        "serverUrl": "",
+        "serverPassword": "",
+        "customModels": []
+      }
+    }
+  }
+}
