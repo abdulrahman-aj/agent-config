@@ -18,10 +18,9 @@
 * **Shell**: do not embed Python in `.sh` files; write `.py` files.
 
 # Testing
-* **Always verify**: no success without evidence.
-* **Automated evidence**: committed tests; manual only if automation is impractical.
-* **Test what you fear**: prioritize code most likely to break.
-* **Behavior over implementation**: test behavior, not internals; behavior survives refactoring.
+* **Always verify**: no success without evidence. Running the real thing counts; evidence isn't always a new test.
+* **Test what you fear**: commit tests for logic likely or costly to break. Skip tests for declarative config, docs and trivial changes.
+* **Behavior over implementation**: test observable behavior. Never assert file contents, exact strings or mocked command sequences.
 
 # Refactoring
 * **Before the change**: refactor to simplify or de-risk it.
@@ -33,7 +32,7 @@
 * **Dev environments**: use the project's Nix dev shell, or add one if none exists.
 * **Reusable tasks**: work through deterministic scripts (e.g. interact, debug, verify); expose additions via Makefile or similar; don't reinvent.
 * **Delegate**: for speed, cost, or expertise; brief fully: verification, findings, open questions.
-* **Bug discipline**: solve the root cause, not the symptom; every fix gets a regression test.
+* **Bug discipline**: solve the root cause, not the symptom; add a regression test when the bug could plausibly recur.
 * **Porting**: document omissions and divergences in the target repository.
 * **Review**: before the user sees it, by a different family (e.g. Opus or Muse reviews Sol; Sol or GLM reviews Opus); YAGNI first.
 * **PRs only**: land work via PRs; never push to main or rewrite history.
