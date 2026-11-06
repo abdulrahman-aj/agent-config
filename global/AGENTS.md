@@ -44,7 +44,7 @@ Use the cheapest model smart enough for the task. Only these:
 
 | Worker | Model (harness) | Effort | Role | Smarts | Cost |
 |---|---|---|---|---|---|
-| Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | architect: design, grilling, orchestration, review | highest | high |
+| Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | architect: design, grilling, orchestration, review; top-level only, never a delegate | highest | high |
 | Sol 6.1 | `gpt-6.1-sol` (Codex) | `high` | foundational implementation, hard reasoning | highest | high |
 | Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | default: research, scoped tasks, reviews | high | low |
 | GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | fallback; second reviewer | high | low |
