@@ -35,7 +35,7 @@
 * **Delegate**: for speed, cost, or expertise; brief fully: verification, findings, open questions.
 * **Bug discipline**: solve the root cause, not the symptom; every fix gets a regression test.
 * **Porting**: document omissions and divergences in the target repository.
-* **Review**: before the user sees it, by a different family (e.g. Muse or GLM reviews Sol); YAGNI first.
+* **Review**: before the user sees it, by a different family (e.g. Opus or Muse reviews Sol; Sol or GLM reviews Opus); YAGNI first.
 * **PRs only**: land work via PRs; never push to main or rewrite history.
 
 # Model selection
@@ -44,6 +44,7 @@ Use the cheapest model smart enough for the task. Only these:
 
 | Worker | Role | Smarts | Cost |
 |---|---|---|---|
-| Sol 6.1 (`gpt-6.1-sol` `high` via Codex) | hard reasoning | highest | high |
-| Muse 1.3 (`opencode-go/muse-spark-1.3-contributor` `xhigh`) | default | high | low |
-| GLM 5.3 Flash (`opencode-go/glm-5.3-flash` `high`) | fallback | high | low |
+| Opus 5.5 (`claude-opus-5-5` via Claude Code) | architect: design, grilling, orchestration, review | highest | high |
+| Sol 6.1 (`gpt-6.1-sol` `high` via Codex) | foundational implementation, hard reasoning | highest | high |
+| Muse 1.3 (`opencode-go/muse-spark-1.3-contributor` `xhigh`) | default: research, scoped tasks, reviews | high | low |
+| GLM 5.3 Flash (`opencode-go/glm-5.3-flash` `high`) | fallback; second reviewer | high | low |
