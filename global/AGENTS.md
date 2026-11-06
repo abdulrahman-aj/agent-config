@@ -32,6 +32,7 @@
 * **Dev environments.** Use the project's Nix dev shell, or add one if none exists.
 * **Reusable tasks.** Do repeatable work through deterministic scripts (for example interact, debug, verify) and expose new ones through the Makefile or similar. Reuse existing scripts before writing new ones.
 * **Delegate** for speed, cost or expertise. Brief fully, including how to verify, what is already known and the open questions.
+* **Delegated work.** If another agent started you, don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question. Orchestrators answer their workers' questions themselves.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
 * **Porting.** Document omissions and divergences in the target repository.
 * **Review.** Before the user sees work, a different model family reviews it (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus). Check YAGNI first.
@@ -47,3 +48,15 @@ Use the cheapest model that is smart enough for the task. Use only these:
 | Sol 6.1 | `gpt-6.1-sol` (Codex) | `high` | Foundational implementation and hard reasoning | highest | high |
 | Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research, scoped tasks and reviews | high | low |
 | GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Fallback and second reviewer | high | low |
+
+# Fleet
+
+| Machine | Hardware | Use for | Access |
+|---|---|---|---|
+| `zenbook-arch-dux` (laptop) | 22 cores, 14 GiB RAM | Orchestration and light work, one VM at a time | Local, primary T3 host |
+| `msi-dux` (PC) | 16 cores, 30 GiB RAM, 2 GPUs | VM-heavy and long-running work, up to three VMs | T3 environment `msi-dux`, or `tailscale ssh abdulrahman@msi-dux` |
+
+* Run VM-heavy work on `msi-dux` and spread parallel work across both machines. Check free RAM before starting a VM.
+* `msi-dux` dual-boots Windows. Never touch its physical disks or boot configuration.
+* Both login shells are fish, so wrap remote commands in `bash -c`.
+* Tailscale SSH may ask the user for a browser check. T3 threads on `msi-dux` don't need SSH.
