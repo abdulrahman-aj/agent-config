@@ -5,7 +5,7 @@ Personal instructions, skills, and OpenCode config for T3.
 ## Install
 
 ```bash
-git clone https://github.com/abdulrahman-aj/agent-config.git ~/agent-config
+git clone git@github.com:abdulrahman-aj/agent-config.git ~/agent-config
 make -C ~/agent-config
 make -C ~/agent-config setup  # helper tooling (ccusage)
 ```

@@ -31,8 +31,8 @@ test: check-prereqs
 	@python3 tests/test-agent-wait.py
 
 uninstall:
-	@if [ -d home ] && [ -d "$(TARGET)" ]; then $(STOW) $(STOW_FLAGS) -D home; fi
 	@if [ -d "$(TARGET)" ] && $(HAS_HOST); then $(HOST_STOW) -D "$(HOST)"; fi
+	@if [ -d home ] && [ -d "$(TARGET)" ]; then $(STOW) $(STOW_FLAGS) -D home; fi
 	@bash scripts/link-shared.sh uninstall "$(TARGET)"
 	@bash scripts/link-shared.sh forget "$(TARGET)"
 
