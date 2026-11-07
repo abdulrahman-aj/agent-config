@@ -56,11 +56,10 @@ Use the cheapest model that is smart enough for the task. Use only these:
 
 | Machine | Hardware | Use for | Access |
 |---|---|---|---|
-| `zenbook-arch-dux` (laptop) | 22 cores, 14 GiB RAM | Orchestration and light work, no VMs | Local, primary T3 host; shows `msi-dux` threads |
+| `zenbook-dux` (laptop) | 22 cores, 14 GiB RAM | Orchestration and light work, no VMs | Local, primary T3 host; shows `msi-dux` threads |
 | `msi-dux` (PC) | 16 cores, 30 GiB RAM, 2 GPUs | All VM work and long-running jobs, up to three 8 GiB VMs | T3 environment `msi-dux`, or `tailscale ssh abdulrahman@msi-dux` |
 
-* Run all VM work on `msi-dux`. Check free RAM before starting a VM.
+* Run builds, VMs and other long-running work on `msi-dux` (it stays up when the laptop lid closes); keep the laptop for work specific to it, such as dotfiles tests or its own services. The laptop sets `AGENT_HEAVY_JOBS=deny`, and repos' heavy make targets (arch-niri-dux's builds and VMs) refuse to run while it's set. Check free RAM before starting a VM.
+* Run commands there with `tailscale ssh abdulrahman@msi-dux "bash -lc '<command>'"`. Its login shell is fish, and `bash -l` gives the login PATH (`~/.local/bin`, Nix). For long jobs, run agent-wait on the remote side: start with `agent-wait --start --log <log> -- <command>`, then repeat `agent-wait --pid <pid> --log <log>` until it stops exiting 124.
 * `msi-dux` dual-boots Windows. Never touch its physical disks or boot configuration.
-* Both login shells are fish, so wrap remote commands in `bash -c`.
 * `msi-dux` runs T3 as a headless background service. Its desktop app can't start while the service runs, so open its threads from the laptop.
-* Tailscale SSH may ask the user for a browser check. T3 threads on `msi-dux` don't need SSH.
