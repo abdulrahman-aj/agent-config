@@ -92,6 +92,16 @@ class AgentGuardTest(unittest.TestCase):
         self.assertEqual(len(self.guard_commands("Stop")), 1)
         self.assertEqual(len(self.guard_commands("PreToolUse")), 1)
 
+    def test_user_hook_sharing_a_group_with_ours_survives(self):
+        settings = self.settings()
+        settings["hooks"]["Stop"][-1]["hooks"].append(USER_HOOK["hooks"][0])
+        with open(self.settings_path, "w") as f:
+            json.dump(settings, f)
+        self.manage("install")
+        self.manage("uninstall")
+        commands = [h["command"] for g in self.settings()["hooks"]["Stop"] for h in g["hooks"]]
+        self.assertEqual(commands, ["notify-send done", "notify-send done"])
+
     def test_uninstall_removes_only_ours(self):
         self.manage("uninstall")
         self.assertEqual(self.settings(), {"theme": "dark", "hooks": {"Stop": [USER_HOOK]}})
@@ -162,6 +172,19 @@ class AgentGuardTest(unittest.TestCase):
         self.assertTrue(self.stop_blocks("Done.", thread=DELEGATED))
         self.assertEqual(self.agent_wait("--pid", pid, "--log", log).returncode, 0)
         self.assertFalse(self.stop_blocks("Done.", thread=DELEGATED))
+
+    def test_malformed_records_do_not_hide_a_job(self):
+        self.start_job(30)
+        jobs = os.path.join(self.home, "state", "agent-jobs")
+        for name, text in [("a.json", '{"owner": "%s"}' % DELEGATED), ("b.json", "[]"), ("c.json", "{")]:
+            with open(os.path.join(jobs, name), "w") as f:
+                f.write(text)
+        self.assertTrue(self.stop_blocks("Started.", thread=DELEGATED))
+
+    def test_a_wait_from_another_thread_does_not_clear_the_job(self):
+        pid, log = self.start_job(0)
+        self.agent_wait("--pid", pid, "--log", log, thread="thread:delegated-task:other")
+        self.assertTrue(self.stop_blocks("Done.", thread=DELEGATED))
 
     def test_other_threads_jobs_do_not_block(self):
         self.start_job(30, thread="thread:delegated-task:other")

@@ -16,8 +16,8 @@ import sys
 MARKER = "/.claude/hooks/agent-guard"
 
 
-def ours(group):
-    return any(MARKER in hook.get("command", "") for hook in group.get("hooks", []))
+def ours(hook):
+    return MARKER in hook.get("command", "")
 
 
 def wanted(target):
@@ -39,9 +39,14 @@ def main():
         if mode == "uninstall":
             return 0
         settings = {}
+    except ValueError as error:
+        sys.exit(f"claude-hooks: {path} isn't valid JSON ({error}); fix it and rerun.")
     hooks = settings.setdefault("hooks", {})
+    # Drop our hooks one by one, so a user hook sharing a group with ours stays.
     for event in list(hooks):
-        hooks[event] = [group for group in hooks[event] if not ours(group)]
+        for group in hooks[event]:
+            group["hooks"] = [hook for hook in group.get("hooks", []) if not ours(hook)]
+        hooks[event] = [group for group in hooks[event] if group["hooks"]]
         if not hooks[event]:
             del hooks[event]
     if mode == "install":

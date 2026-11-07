@@ -4,7 +4,7 @@ TARGET ?= $(HOME)
 # The pinned checkout agents load from; `make deploy` keeps it at origin/main.
 DEPLOY_DIR ?= $(HOME)/.local/share/agent-config
 # Picks hosts/<HOST>/, stowed on top of home/ for per-machine files.
-HOST ?= $(shell cat /etc/hostname 2>/dev/null)
+HOST ?= $(shell uname -n)
 STOW ?= stow
 STOW_FLAGS := --no-folding -d . -t "$(TARGET)"
 HOST_STOW = $(STOW) --no-folding -d hosts -t "$(TARGET)"

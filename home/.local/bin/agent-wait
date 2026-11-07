@@ -32,7 +32,8 @@ exit codes:
   124  still running after --max-seconds; call again
 
 To stop a job, kill its process group (kill -- -PID). Killing only the PID
-leaves the job running, and --pid then exits 4.
+leaves the job running, and --pid then exits 4. Inside a T3 thread, run --pid
+once more after the kill, so the job's record is cleared.
 
 Limits: stall age carries across calls only through the log's mtime, so a
 future mtime restarts the count, and a log deleted between calls gives 2.
@@ -115,6 +116,18 @@ def record_job(pid, log):
     os.replace(path + ".tmp", path)
 
 
+def forget_job(pid):
+    """Delete the job's record, unless another T3 thread owns it."""
+    path = job_record(pid)
+    try:
+        with open(path) as f:
+            owner = json.load(f).get("owner")
+        if owner == os.environ.get("T3CODE_THREAD_ID", owner):
+            os.remove(path)
+    except (OSError, ValueError, AttributeError):
+        pass  # No record, or one we can't read: nothing to clear.
+
+
 def start(log, command):
     try:
         log_fd = open_regular(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
@@ -127,7 +140,10 @@ def start(log, command):
     sys.stdout.flush()
     pid = os.fork()
     if pid:
-        record_job(pid, log)
+        try:
+            record_job(pid, log)
+        except OSError as error:  # The job runs either way; the caller needs its PID.
+            print(f"agent-wait: could not record the job: {error}", file=sys.stderr)
         print(pid)
         return EXITED
     # The supervisor. A new session survives the harness killing the calling
@@ -221,12 +237,10 @@ def main():
     if command:
         parser.error("a command is only allowed with --start")
     code = wait(args.pid, args.log, args.stall_minutes * 60, args.max_seconds)
-    if code != RUNNING:
-        # Someone has now seen the job end, stall or vanish.
-        try:
-            os.remove(job_record(args.pid))
-        except FileNotFoundError:
-            pass
+    # A wait that saw the job end, stall or vanish clears its record. Bad input
+    # about a live job (say, a wrong --log) doesn't: the job is still unseen.
+    if code != RUNNING and not (code == BAD_INPUT and start_time(args.pid) is not None):
+        forget_job(args.pid)
     return code
 
 

@@ -112,6 +112,17 @@ class FleetRunTest(unittest.TestCase):
                                         **thread).returncode, 3)
         self.assertFalse(stop_blocked(), "a finished wait left the block")
 
+    def test_wait_clears_a_job_started_under_another_host_spelling(self):
+        thread = {"T3CODE_THREAD_ID": "thread:delegated-task:fleet"}
+        self.run_fleet("Box", "--", "agent-wait", "--start", "--log", "l", "--", "true", **thread)
+        self.run_fleet("tester@box", "--", "agent-wait", "--pid", "4242", **thread)
+        self.assertEqual(os.listdir(os.path.join(self.tmp, "state", "agent-jobs")), [])
+
+    def test_job_arguments_named_like_options_are_not_a_start(self):
+        thread = {"T3CODE_THREAD_ID": "thread:delegated-task:fleet"}
+        self.run_fleet("box", "--", "agent-wait", "--pid", "1", "--", "x", "--start", **thread)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "state", "agent-jobs")))
+
     def test_jobs_outside_t3_are_not_recorded(self):
         self.run_fleet("box", "--", "agent-wait", "--start", "--log", "l", "--", "true")
         self.assertFalse(os.path.exists(os.path.join(self.tmp, "state", "agent-jobs")))

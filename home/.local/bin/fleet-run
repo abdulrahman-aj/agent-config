@@ -23,28 +23,50 @@ bounded steps, also on the remote side:
   fleet-run msi-dux -- agent-wait --start --log LOG -- COMMAND [ARG ...]
   fleet-run msi-dux -- agent-wait --pid PID --log LOG   # repeat while it exits 124
 Inside a T3 thread, fleet-run records the remote job, and Claude Code's
-agent-guard hook keeps the turn going until a wait returns something but 124.
+agent-guard hook keeps the turn going until a wait returns anything but 124.
+After killing a job (kill -- -PID on the remote), run the wait once more.
 """
 
 PRELUDE = 'if [ -d "$HOME/.local/share/mise/shims" ]; then PATH="$HOME/.local/share/mise/shims:$PATH"; fi\n'
 RUNNING = 124
 
 
+def agent_wait_options(command):
+    """agent-wait's own arguments: those before the job's `--`."""
+    return command[:command.index("--")] if "--" in command else command
+
+
 def option(command, name):
     """Return the value of --name VALUE or --name=VALUE in an agent-wait argv."""
-    for i, arg in enumerate(command):
-        if arg == "--":
-            break
-        if arg == name and i + 1 < len(command):
-            return command[i + 1]
+    args = agent_wait_options(command)
+    for i, arg in enumerate(args):
+        if arg == name and i + 1 < len(args):
+            return args[i + 1]
         if arg.startswith(name + "="):
             return arg.split("=", 1)[1]
     return None
 
 
 def job_record(host, pid):
+    # Keyed by the bare host, so `box` and `user@box` find the same record.
+    machine = host.split("@")[-1].lower().replace("/", "_")
     state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
-    return os.path.join(state, "agent-jobs", f"{host.replace('/', '_')}-{pid}.json")
+    return os.path.join(state, "agent-jobs", f"{machine}-{pid}.json")
+
+
+def forget_job(host, pid):
+    """Delete the record once a wait has seen the job end, unless another thread owns it."""
+    path = job_record(host, pid)
+    try:
+        with open(path) as f:
+            owner = json.load(f).get("owner")
+    except (OSError, ValueError, AttributeError):
+        return
+    if owner == os.environ.get("T3CODE_THREAD_ID", owner):
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
 
 
 def record_job(host, pid, log):
@@ -72,21 +94,20 @@ def main():
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not command:
         parser.error("a command is required after --")
-    destination = args.host if "@" in args.host else \
-        f"{os.environ.get('FLEET_USER') or os.environ['USER']}@{args.host}"
+    user = os.environ.get("FLEET_USER") or os.environ.get("USER")
+    if "@" not in args.host and not user:
+        parser.error("set $FLEET_USER or $USER, or pass USER@HOST")
+    destination = args.host if "@" in args.host else f"{user}@{args.host}"
     script = PRELUDE + "exec " + shlex.join(command) + "\n"
     ssh = ["tailscale", "ssh", destination, "bash -l -s"]
 
-    starts_job = command[0] == "agent-wait" and "--start" in command
+    starts_job = command[0] == "agent-wait" and "--start" in agent_wait_options(command)
     if not starts_job:
         code = subprocess.run(ssh, input=script.encode()).returncode
         if command[0] == "agent-wait" and code != RUNNING:
             pid = option(command, "--pid")
             if pid:
-                try:
-                    os.remove(job_record(args.host, pid))
-                except FileNotFoundError:
-                    pass
+                forget_job(args.host, pid)
         return code
 
     # Capture the PID agent-wait prints so the job can be recorded.
@@ -94,7 +115,10 @@ def main():
     sys.stdout.buffer.write(result.stdout)
     lines = result.stdout.decode(errors="replace").split()
     if result.returncode == 0 and lines and lines[-1].isdigit():
-        record_job(args.host, lines[-1], option(command, "--log"))
+        try:
+            record_job(args.host, lines[-1], option(command, "--log"))
+        except OSError as error:  # The job runs either way; the caller needs its PID.
+            print(f"fleet-run: could not record the job: {error}", file=sys.stderr)
     return result.returncode
 
 

@@ -20,7 +20,7 @@ the pinned one.
 
 Edit `global/AGENTS.md` for personal instructions, `global/skills/<name>/SKILL.md` for skills,
 `home/` for files stowed 1:1, and `hosts/<hostname>/` for files stowed on one machine only. Fan-outs (one source, many homes) are linked
-by `scripts/link-shared.sh` instead — anything 1:1 lives under `home/`.
+by `scripts/link-shared.sh` instead. Anything 1:1 lives under `home/` or `hosts/<hostname>/`.
 
 | Installed path | Source |
 | --- | --- |
@@ -36,7 +36,7 @@ by `scripts/link-shared.sh` instead — anything 1:1 lives under `home/`.
 | `~/.local/bin/agent-wait`, `~/.local/bin/fleet-run` | `home/.local/bin/` |
 | `~/.claude/hooks/agent-guard` | `home/.claude/hooks/agent-guard` |
 | `~/.claude/settings.json` (hook entries merged in) | `scripts/claude-hooks.py` |
-| `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-arch-dux/` |
+| `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-arch-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
 
 Native directories remain real, so separately installed skills coexist.
 

@@ -56,7 +56,8 @@ def unwaited_job(owner):
                 job = json.load(f)
         except (OSError, ValueError):
             continue
-        if job.get("owner") == owner:
+        # A malformed record mustn't hide the others, so skip it.
+        if isinstance(job, dict) and job.get("owner") == owner and job.get("wait"):
             return job["wait"]
     return None
 
