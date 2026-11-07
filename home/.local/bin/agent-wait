@@ -5,11 +5,17 @@
 the agent's shell, and prints the supervisor's PID. The supervisor records the
 job's exit status in LOG.exit. --pid waits on that PID for at most
 --max-seconds and calls a log unchanged for --stall-minutes a stall. Linux only.
+
+Inside a T3 thread, --start also records the job under
+$XDG_STATE_HOME/agent-jobs and a --pid result other than 124 deletes the record;
+the agent-guard Stop hook keeps the thread's turn going while one remains.
 """
 
 import argparse
+import json
 import math
 import os
+import shlex
 import stat
 import subprocess
 import sys
@@ -26,7 +32,8 @@ exit codes:
   124  still running after --max-seconds; call again
 
 To stop a job, kill its process group (kill -- -PID). Killing only the PID
-leaves the job running, and --pid then exits 4.
+leaves the job running, and --pid then exits 4. Inside a T3 thread, run --pid
+once more after the kill, so the job's record is cleared.
 
 Limits: stall age carries across calls only through the log's mtime, so a
 future mtime restarts the count, and a log deleted between calls gives 2.
@@ -91,6 +98,46 @@ def last_line(path):
     return next((line.strip()[-200:] for line in reversed(lines) if line.strip()), "")
 
 
+def job_record(pid):
+    state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(state, "agent-jobs", f"local-{pid}.json")
+
+
+def record_job(pid, log):
+    """Note the job for agent-guard; only T3 threads are guarded, so skip others."""
+    owner = os.environ.get("T3CODE_THREAD_ID")
+    if not owner:
+        return
+    path = job_record(pid)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    reset_blocks(pid)  # A reused PID starts with a fresh count.
+    wait = f"agent-wait --pid {pid} --log {shlex.quote(os.path.abspath(log))}"
+    with open(path + ".tmp", "w") as f:
+        json.dump({"owner": owner, "wait": wait}, f)
+    os.replace(path + ".tmp", path)
+
+
+def forget_job(pid):
+    """Delete the job's record, unless another T3 thread owns it."""
+    path = job_record(pid)
+    try:
+        with open(path) as f:
+            owner = json.load(f).get("owner")
+        if owner == os.environ.get("T3CODE_THREAD_ID", owner):
+            os.remove(path)
+            reset_blocks(pid)
+    except (OSError, ValueError, AttributeError):
+        pass  # No record, or one we can't read: nothing to clear.
+
+
+def reset_blocks(pid):
+    """The agent is waiting, so agent-guard's count of blocks starts over."""
+    try:
+        os.remove(job_record(pid) + ".blocks")
+    except OSError:
+        pass
+
+
 def start(log, command):
     try:
         log_fd = open_regular(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
@@ -103,6 +150,10 @@ def start(log, command):
     sys.stdout.flush()
     pid = os.fork()
     if pid:
+        try:
+            record_job(pid, log)
+        except OSError as error:  # The job runs either way; the caller needs its PID.
+            print(f"agent-wait: could not record the job: {error}", file=sys.stderr)
         print(pid)
         return EXITED
     # The supervisor. A new session survives the harness killing the calling
@@ -195,7 +246,14 @@ def main():
         return start(args.log, command)
     if command:
         parser.error("a command is only allowed with --start")
-    return wait(args.pid, args.log, args.stall_minutes * 60, args.max_seconds)
+    code = wait(args.pid, args.log, args.stall_minutes * 60, args.max_seconds)
+    # A wait that saw the job end, stall or vanish clears its record. Bad input
+    # about a live job (say, a wrong --log) doesn't: the job is still unseen.
+    if code != RUNNING and not (code == BAD_INPUT and start_time(args.pid) is not None):
+        forget_job(args.pid)
+    if code == RUNNING:
+        reset_blocks(args.pid)
+    return code
 
 
 if __name__ == "__main__":

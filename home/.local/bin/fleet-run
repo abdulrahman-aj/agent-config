@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Run a command on a fleet machine over Tailscale SSH, with its arguments intact.
+
+The command reaches the remote as a bash script on stdin, so the remote login
+shell (fish on this fleet) only ever parses `bash -l -s`, and every argument
+arrives exactly as given: spaces, quotes, $ and newlines included. bash -l gives
+the login PATH (~/.local/bin, Nix); mise shims are added when present.
+"""
+
+import argparse
+import json
+import os
+import shlex
+import subprocess
+import sys
+
+EPILOG = """\
+The exit status is the remote command's (255: SSH failed). stdin isn't
+forwarded. HOST may be USER@HOST; the user defaults to $FLEET_USER, then $USER.
+
+Long jobs: start them detached with agent-wait on the remote side, then wait in
+bounded steps, also on the remote side:
+  fleet-run msi-dux -- agent-wait --start --log LOG -- COMMAND [ARG ...]
+  fleet-run msi-dux -- agent-wait --pid PID --log LOG   # repeat while it exits 124
+Inside a T3 thread, fleet-run records the remote job, and the agent-guard hook
+(Claude Code, Codex) keeps the turn going until a wait returns 0, 3 or 4.
+After killing a job (kill -- -PID on the remote), run the wait once more.
+"""
+
+PRELUDE = 'if [ -d "$HOME/.local/share/mise/shims" ]; then PATH="$HOME/.local/share/mise/shims:$PATH"; fi\n'
+RUNNING = 124
+
+
+def agent_wait_options(command):
+    """agent-wait's own arguments: those before the job's `--`."""
+    return command[:command.index("--")] if "--" in command else command
+
+
+def option(command, name):
+    """Return the value of --name VALUE or --name=VALUE in an agent-wait argv."""
+    args = agent_wait_options(command)
+    for i, arg in enumerate(args):
+        if arg == name and i + 1 < len(args):
+            return args[i + 1]
+        if arg.startswith(name + "="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+def job_record(host, pid):
+    # Keyed by the bare host, so `box` and `user@box` find the same record.
+    machine = host.split("@")[-1].lower().replace("/", "_")
+    state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(state, "agent-jobs", f"{machine}-{pid}.json")
+
+
+def waited(host, pid, code):
+    """Update the job's record after a wait returned CODE.
+
+    124 (still running) resets agent-guard's count of blocks: the agent is
+    waiting. 0, 3 or 4 (seen to end or stall) deletes the record and count,
+    unless another thread owns them. Anything else, such as 2 for a wrong --log
+    or 255 for SSH, changes nothing: the remote job's liveness is unknown here.
+    """
+    path = job_record(host, pid)
+    if code not in (0, 3, 4, RUNNING):
+        return
+    try:
+        os.remove(path + ".blocks")
+    except OSError:
+        pass
+    if code == RUNNING:
+        return
+    try:
+        with open(path) as f:
+            owner = json.load(f).get("owner")
+        if owner == os.environ.get("T3CODE_THREAD_ID", owner):
+            os.remove(path)
+    except (OSError, ValueError, AttributeError):
+        pass  # No record, or one we can't read: nothing to clear.
+
+
+def record_job(host, pid, log):
+    owner = os.environ.get("T3CODE_THREAD_ID")
+    if not owner:
+        return  # agent-guard only guards T3 threads.
+    wait = ["fleet-run", host, "--", "agent-wait", "--pid", str(pid)]
+    if log:
+        wait += ["--log", log]
+    path = job_record(host, pid)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:  # A reused PID starts with a fresh count.
+        os.remove(path + ".blocks")
+    except OSError:
+        pass
+    with open(path + ".tmp", "w") as f:
+        json.dump({"owner": owner, "wait": shlex.join(wait)}, f)
+    os.replace(path + ".tmp", path)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__.split("\n\n")[0],
+        usage="fleet-run HOST -- COMMAND [ARG ...]",
+        epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("host")
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not command:
+        parser.error("a command is required after --")
+    user = os.environ.get("FLEET_USER") or os.environ.get("USER")
+    if "@" not in args.host and not user:
+        parser.error("set $FLEET_USER or $USER, or pass USER@HOST")
+    destination = args.host if "@" in args.host else f"{user}@{args.host}"
+    script = PRELUDE + "exec " + shlex.join(command) + "\n"
+    ssh = ["tailscale", "ssh", destination, "bash -l -s"]
+
+    starts_job = command[0] == "agent-wait" and "--start" in agent_wait_options(command)
+    if not starts_job:
+        code = subprocess.run(ssh, input=script.encode()).returncode
+        pid = option(command, "--pid") if command[0] == "agent-wait" else None
+        if pid:
+            waited(args.host, pid, code)
+        return code
+
+    # Capture the PID agent-wait prints so the job can be recorded.
+    result = subprocess.run(ssh, input=script.encode(), stdout=subprocess.PIPE)
+    sys.stdout.buffer.write(result.stdout)
+    lines = result.stdout.decode(errors="replace").split()
+    if result.returncode == 0 and lines and lines[-1].isdigit():
+        try:
+            record_job(args.host, lines[-1], option(command, "--log"))
+        except OSError as error:  # The job runs either way; the caller needs its PID.
+            print(f"fleet-run: could not record the job: {error}", file=sys.stderr)
+    return result.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())

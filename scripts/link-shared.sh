@@ -42,7 +42,9 @@ fi
 target="$(realpath -m "${2:?target home required}")"
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 record="$(record_path "$target")"
-roots=(.agents .claude .codex .config/opencode .t3)
+# Everywhere a managed link can live, so a relocation (such as moving to the
+# pinned deploy checkout) sweeps all of them.
+roots=(.agents .claude .codex .config/opencode .config/environment.d .local/bin .t3)
 acted=0
 # TARGET paths slated for removal in --check mode (already gone on install).
 # The conflict check must evaluate post-clean state, not pre-clean.

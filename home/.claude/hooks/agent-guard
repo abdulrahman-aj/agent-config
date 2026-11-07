@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Claude Code and Codex hooks that enforce orchestration rules.
+
+agent-guard stop HARNESS - Stop hook. Delegated T3 children can't end a turn
+                           while a job they started with agent-wait (or fleet-run
+                           ... agent-wait) hasn't been waited out. Top-level
+                           sessions that have a picker can't end a turn on a
+                           question asked in prose.
+agent-guard ask HARNESS  - PreToolUse hook on the picker tool. Delegated children
+                           can't ask the user; their orchestrator answers.
+HARNESS is claude (the default) or codex; both use the same hook JSON.
+
+Reads the hook's JSON on stdin and prints a decision only when it blocks. Any
+error allows: a broken guard must never trap an agent.
+"""
+
+import json
+import os
+import re
+import sys
+
+# T3 gives delegate_task children thread ids with this prefix; the orchestrator's
+# thread (mcp:launch:..., or an app-created id) never has it.
+DELEGATED_PREFIX = "thread:delegated-task:"
+# Claude Code entrypoints that offer AskUserQuestion. `claude -p` (sdk-cli) and
+# other SDK hosts may not, and a prose question is all they can do.
+INTERACTIVE_ENTRYPOINTS = {"cli", "t3-code"}
+PICKERS = {"claude": "AskUserQuestion",
+           "codex": "request_user_input_async (or request_user_input in Plan mode)"}
+# Neither harness may loop forever on a job: Codex has no cap on Stop-hook
+# continuations, so the guard lets the turn end after this many blocks in a row.
+# A wait that returns 124 (the agent is waiting) resets the count.
+MAX_JOB_BLOCKS = 8
+DELEGATED_ASK_REASON = (
+    "You're a delegated worker: end your turn with the question instead; "
+    "the orchestrator answers."
+)
+
+
+def has_picker(harness, event):
+    if harness == "claude":
+        return os.environ.get("CLAUDE_CODE_ENTRYPOINT") in INTERACTIVE_ENTRYPOINTS
+    # Codex offers a picker in T3 sessions (request_user_input_async, in Default
+    # mode) but not in `codex exec`, subagents or a plain TUI's Default mode.
+    # The rollout's first line says who started the session: its env can't,
+    # since a nested `codex exec` inherits it.
+    with open(event["transcript_path"]) as f:
+        meta = json.loads(f.readline()).get("payload", {})
+    return meta.get("originator") == "T3 Code" and meta.get("source") in ("cli", "vscode")
+
+
+def jobs_dir():
+    state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(state, "agent-jobs")
+
+
+def unwaited_job(owner):
+    """Return (record path, wait command) of a job this thread hasn't waited out.
+
+    agent-wait and fleet-run write a record on --start and delete it when a wait
+    returns anything but 124, so a record means "nobody has seen this job end".
+    Liveness isn't checked: a job that ended unseen still needs its result read.
+    """
+    try:
+        names = sorted(n for n in os.listdir(jobs_dir()) if n.endswith(".json"))
+    except FileNotFoundError:
+        return None
+    for name in names:
+        path = os.path.join(jobs_dir(), name)
+        try:
+            with open(path) as f:
+                job = json.load(f)
+        except (OSError, ValueError):
+            continue
+        # A malformed record mustn't hide the others, so skip it.
+        if isinstance(job, dict) and job.get("owner") == owner and job.get("wait"):
+            return path, job["wait"]
+    return None
+
+
+def count_block(record):
+    """Count a block against the job; False once MAX_JOB_BLOCKS were in a row.
+
+    The count lives beside the record; agent-wait and fleet-run delete it on 124.
+    """
+    counter = record + ".blocks"
+    try:
+        with open(counter) as f:
+            blocks = int(f.read())
+    except (OSError, ValueError):
+        blocks = 0
+    if blocks >= MAX_JOB_BLOCKS:
+        return False
+    with open(counter, "w") as f:
+        f.write(str(blocks + 1))
+    return True
+
+
+def strip_quoted(text):
+    """Drop code and quotations, where a question mark isn't ours to answer."""
+    text = re.sub(r"^ {0,3}(```|~~~).*?^ {0,3}\1[^\n]*$", "", text, flags=re.S | re.M)
+    text = re.sub(r"^ {0,3}(```|~~~).*", "", text, flags=re.S | re.M)  # unclosed fence
+    text = re.sub(r"^\s*>.*$", "", text, flags=re.M)
+    text = re.sub(r"`[^`\n]*`", "", text)
+    return re.sub(r"\"[^\"\n]*\"|“[^”\n]*”", "", text)
+
+
+def asks_in_prose(message):
+    """True when the final paragraph has a sentence ending in a question mark."""
+    paragraphs = [p for p in re.split(r"\n\s*\n", strip_quoted(message)) if p.strip()]
+    if not paragraphs:
+        return False
+    # "?" then optional closing punctuation, then whitespace or the end: this
+    # skips URLs like ?q=1.
+    return re.search(r"\?[)*_'\]]*(\s|$)", paragraphs[-1]) is not None
+
+
+def stop(event, harness):
+    thread = os.environ.get("T3CODE_THREAD_ID", "")
+    if thread.startswith(DELEGATED_PREFIX):
+        # stop_hook_active is ignored on purpose: the block lifts as soon as a
+        # wait returns, and MAX_JOB_BLOCKS ends a loop where the model won't wait.
+        job = unwaited_job(thread)
+        if job and count_block(job[0]):
+            return {"decision": "block", "reason": (
+                f"A job you started hasn't finished: run `{job[1]}` until it stops "
+                "returning 124, then act on the result (on 3, report the stall).")}
+        return None
+    if event.get("stop_hook_active"):
+        return None  # Block once; if the agent still asks, the question stands.
+    if asks_in_prose(event.get("last_assistant_message") or "") and has_picker(harness, event):
+        return {"decision": "block", "reason": (
+            f"Ask the user with {PICKERS[harness]} (multiple choice, strongest option "
+            "first, marked recommended), or state the outcome instead of asking.")}
+    return None
+
+
+def ask(event, harness):
+    if not os.environ.get("T3CODE_THREAD_ID", "").startswith(DELEGATED_PREFIX):
+        return None
+    return {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": DELEGATED_ASK_REASON,
+    }}
+
+
+def main():
+    try:
+        event = json.load(sys.stdin)
+        harness = sys.argv[2] if len(sys.argv) > 2 else "claude"
+        decision = {"stop": stop, "ask": ask}[sys.argv[1]](event, harness)
+    except Exception as error:  # noqa: BLE001 - fail open, see the docstring
+        print(f"agent-guard: {error!r}", file=sys.stderr)
+        return 0
+    if decision:
+        print(json.dumps(decision))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
