@@ -10,7 +10,8 @@ make -C ~/agent-config
 make -C ~/agent-config setup  # helper tooling (ccusage)
 ```
 
-The links point into `~/agent-config`, so edits there are live for every agent.
+The links point into the checkout you run `make` from (`~/agent-config`), so
+edits there are live for every agent.
 Edit in a git worktree when a change shouldn't go live yet.
 
 ## One source
@@ -30,7 +31,7 @@ by `scripts/link-shared.sh` instead. Anything 1:1 lives under `home/` or `hosts/
 | `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
-| `~/.local/bin/agent-wait`, `fleet-run`, `agent-guard` | `home/.local/bin/` |
+| `~/.local/bin/{agent-wait,fleet-run,agent-guard}` | `home/.local/bin/` |
 | `~/.claude/settings.json`, `~/.codex/hooks.json` (hook entries merged in; Codex's trust of them in `~/.codex/config.toml`) | `scripts/agent-hooks.py` |
 | `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
 

@@ -24,6 +24,8 @@ ORCHESTRATOR = "mcp:launch:e71e088f"
 USER_HOOK = {"hooks": [{"type": "command", "command": "notify-send done"}]}
 # An entry from an earlier install, which kept agent-guard under ~/.claude/hooks.
 OLD_GUARD_HOOK = {"hooks": [{"type": "command", "command": "/old/.claude/hooks/agent-guard stop"}]}
+# The user's own hook with a similar name: not ours to remove.
+LOOKALIKE_HOOK = {"hooks": [{"type": "command", "command": "/h/.local/bin/agent-guardian stop"}]}
 CONFIG = {"claude": (".claude", "settings.json"), "codex": (".codex", "hooks.json")}
 # Without codex on PATH, install skips asking Codex to trust the hooks.
 NO_CODEX_PATH = os.path.dirname(sys.executable) + ":/usr/bin:/bin"
@@ -42,7 +44,7 @@ class AgentGuardTest(unittest.TestCase):
             json.dump({"theme": "dark", "hooks": {"Stop": [USER_HOOK, OLD_GUARD_HOOK]}}, f)
         os.makedirs(os.path.join(self.home, ".codex"))
         with open(os.path.join(self.home, ".codex", "hooks.json"), "w") as f:
-            json.dump({"hooks": {"Stop": [USER_HOOK]}}, f)
+            json.dump({"hooks": {"Stop": [USER_HOOK, OLD_GUARD_HOOK, LOOKALIKE_HOOK]}}, f)
         self.manage("install")
         self.manage("install")  # Redeploys must not stack copies.
         self.env = {k: v for k, v in os.environ.items()
@@ -68,7 +70,8 @@ class AgentGuardTest(unittest.TestCase):
     def guard_commands(self, event, harness="claude"):
         return [hook["command"]
                 for group in self.settings(harness).get("hooks", {}).get(event, [])
-                for hook in group["hooks"] if hook not in USER_HOOK["hooks"]]
+                for hook in group["hooks"]
+                if hook not in USER_HOOK["hooks"] + LOOKALIKE_HOOK["hooks"]]
 
     def fire(self, event, payload, thread=None, entrypoint="t3-code", harness="claude",
              originator="T3 Code", source="vscode"):
@@ -136,7 +139,7 @@ class AgentGuardTest(unittest.TestCase):
     def test_uninstall_removes_only_ours(self):
         self.manage("uninstall")
         self.assertEqual(self.settings(), {"theme": "dark", "hooks": {"Stop": [USER_HOOK]}})
-        self.assertEqual(self.settings("codex"), {"hooks": {"Stop": [USER_HOOK]}})
+        self.assertEqual(self.settings("codex"), {"hooks": {"Stop": [USER_HOOK, LOOKALIKE_HOOK]}})
 
     # Prose questions (top-level sessions)
 
@@ -284,7 +287,7 @@ def codex_hook_trust(home):
                 if message.get("id") == request_id:
                     break
         return {hook["key"]: hook["trustStatus"] for entry in message["result"]["data"]
-                for hook in entry["hooks"] if "agent-guard" in hook.get("command", "")}
+                for hook in entry["hooks"] if "/.local/bin/agent-guard " in hook.get("command", "")}
     finally:
         server.stdin.close()
         server.wait(timeout=30)

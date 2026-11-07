@@ -18,6 +18,7 @@ Usage: agent-hooks.py install|uninstall TARGET
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -34,7 +35,9 @@ FILES = {"claude": (".claude", "settings.json"), "codex": (".codex", "hooks.json
 
 
 def ours(hook):
-    return any(marker in hook.get("command", "") for marker in MARKERS)
+    # The path must end at a word boundary, so `agent-guardian` isn't ours.
+    command = hook.get("command", "")
+    return any(re.search(re.escape(marker) + r"""(?=[\s'"]|$)""", command) for marker in MARKERS)
 
 
 def wanted(target, harness):

@@ -16,6 +16,6 @@ Placement rule: 1:1 files live under `home/` (or `hosts/<hostname>/`), and 1:N l
 
 - `make` deploys; `make check` dry-runs; `make test` is the gate (keep green);
   `make uninstall` tears down; `make setup` installs helper tooling.
-- Deployed links point into `~/agent-config`, so edits there are live. Edit in a
-  git worktree when a change shouldn't go live yet.
+- Deployed links point into the checkout `make` ran from (`~/agent-config`), so
+  edits there are live. Edit in a git worktree when a change shouldn't go live yet.
 - Land via PRs; commit only when asked.
