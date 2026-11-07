@@ -23,6 +23,26 @@ What's left are T3 issues to report upstream and project fixes.
   `node:delegated-task:command%3Amcp%3Af2ada484-d25d-45e3-84e0-5b1bbe144d13%3A`; below they're
   abbreviated as `…%3A<suffix>`.
 
+### Rule enforcement
+What enforces each orchestration rule. "Prose only" rows are candidates for a script, lint or T3 feature.
+
+| Rule (location) | Enforced by |
+|---|---|
+| No ask-user or picker tools in delegated work (global) | Prose only. T3 surfaces child questions as `t3_pending_request`, which helps the orchestrator notice. |
+| Wait for your own jobs; report a stall (global) | `agent-wait` (exit codes 0, 3, 124; `tests/test-agent-wait.py`) |
+| Report a blocker after 10 minutes (global) | Prose only |
+| Commit and push WIP near a usage limit (global) | Prose only |
+| Home project (skill) | T3: a local `delegate_task` refuses another project |
+| Children, not threads (skill) | Prose only |
+| Remote checkouts: one writer each (skill) | T3 refuses worktree isolation remotely; serializing writers is prose only |
+| Keep work moving; ask with the picker (skill) | Prose only |
+| Answer worker questions (skill) | Prose only (`t3_pending_request` to check) |
+| Waits in briefs (skill) | `agent-wait`, given as a literal command in the brief |
+| Confirm the stall before re-dispatching OpenCode (skill) | Prose only; candidate script that checks the OpenCode log for activity after a run's end |
+| Resume with a new delegate (skill) | Prose only (T3's own orchestration prompt says the same) |
+| Clear queues before replacing a worker (skill) | Prose only, until T3 drops queued notices on settle (upstream item below) |
+| Settle remote children (skill) | Prose only, until T3 records remote parents (upstream item below) |
+
 ### Report to T3 upstream
 - [ ] **Children on a linked environment can't use worktree isolation.**
   Evidence: architect thread `mcp:launch:e71e088f…`, ~20:03 UTC: `delegate_task` with

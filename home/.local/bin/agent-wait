@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Wait in bounded steps for a job an agent started, and notice when it hangs.
+
+Agents that end their turn while a job runs are never resumed, and agents that
+wait on a hung job wait forever. This waits on one PID for at most
+--max-seconds and, given the job's log, treats a log untouched for
+--stall-minutes as a stall. Linux only: it reads /proc.
+
+Exit codes:
+  0    the process exited (its own exit status is unknown here)
+  2    bad input: no such process, or the log is missing or unreadable
+  3    stalled: the log hasn't changed for --stall-minutes; report it
+  124  --max-seconds elapsed and the job still runs; call again
+"""
+
+import argparse
+import os
+import sys
+import time
+
+EXITED, BAD_INPUT, STALLED, STILL_RUNNING = 0, 2, 3, 124
+POLL_SECONDS = 1.0
+TAIL_BYTES = 4096
+
+
+def start_time(pid):
+    """Return the process's start time from /proc, or None if it's gone or a zombie.
+
+    Comparing start times catches PID reuse: a new process with the same PID
+    has a different start time. A zombie has exited but not been reaped, so it
+    counts as gone.
+    """
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            stat = f.read()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    # The command name (field 2) may contain spaces and parentheses, so split
+    # after its closing parenthesis. Field 3 is the state, field 22 the start time.
+    fields = stat[stat.rindex(")") + 2 :].split()
+    if fields[0] in ("Z", "X"):
+        return None
+    return fields[19]
+
+
+def last_line(path):
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, os.path.getsize(path) - TAIL_BYTES))
+            lines = f.read().decode(errors="replace").splitlines()
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        if line.strip():
+            return line.strip()[-200:]
+    return ""
+
+
+def log_age(path):
+    """Seconds since the log last changed. Any write updates its mtime."""
+    return time.time() - os.stat(path).st_mtime
+
+
+def report(state, hint, pid, started, log):
+    parts = [f"agent-wait: pid {pid} {state} after {time.monotonic() - started:.0f}s"]
+    if log:
+        parts.append(f"log last changed {log_age(log):.0f}s ago")
+        parts.append(f"last line: {last_line(log)!r}")
+    parts.append(hint)
+    print("; ".join(parts))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Wait in bounded steps for a job and detect stalls.",
+        epilog="Exit codes: 0 exited, 2 bad input, 3 stalled, 124 still running.",
+    )
+    parser.add_argument("--pid", type=int, required=True, help="the job's process id")
+    parser.add_argument("--log", help="a file the job keeps writing; enables stall detection")
+    parser.add_argument("--stall-minutes", type=float, default=15.0,
+                        help="report a stall when the log is unchanged this long (default 15)")
+    parser.add_argument("--max-seconds", type=float, default=540.0,
+                        help="return 124 after this long if the job still runs (default 540)")
+    args = parser.parse_args()
+
+    identity = start_time(args.pid)
+    if identity is None:
+        print(f"agent-wait: no running process with pid {args.pid}", file=sys.stderr)
+        return BAD_INPUT
+    if args.log:
+        try:
+            with open(args.log, "rb"):
+                pass
+        except OSError as error:
+            print(f"agent-wait: can't read log: {error}", file=sys.stderr)
+            return BAD_INPUT
+
+    started = time.monotonic()
+    while True:
+        if start_time(args.pid) != identity:
+            report("exited", "check the job's own exit status or output", args.pid, started, args.log)
+            return EXITED
+        # Stall is judged from the log's mtime, not from when this call began,
+        # so repeated calls keep counting from the job's last real progress.
+        if args.log and log_age(args.log) >= args.stall_minutes * 60:
+            report("stalled", "report it with the job's state", args.pid, started, args.log)
+            return STALLED
+        if time.monotonic() - started >= args.max_seconds:
+            report("still running", "call agent-wait again", args.pid, started, args.log)
+            return STILL_RUNNING
+        time.sleep(POLL_SECONDS)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
