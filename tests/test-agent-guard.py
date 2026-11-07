@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Behavior tests for the agent-guard hooks, through the settings that deploy installs.
+"""Behavior tests for the agent-guard hooks, through the config that deploy installs.
 
-Each test installs the hooks into a temporary home with scripts/claude-hooks.py,
-then runs the command the settings name, with synthetic hook JSON on stdin, and
-checks only the decision: blocked, denied or allowed.
+Each test installs the hooks into a temporary home with scripts/agent-hooks.py,
+then runs the command Claude Code's settings.json or Codex's hooks.json names,
+with synthetic hook JSON on stdin, and checks only the decision: blocked, denied
+or allowed. One test asks a real Codex whether it trusts the installed hooks.
 """
 
 import json
@@ -15,12 +16,15 @@ import tempfile
 import unittest
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-CLAUDE_HOOKS = os.path.join(ROOT, "scripts", "claude-hooks.py")
+AGENT_HOOKS = os.path.join(ROOT, "scripts", "agent-hooks.py")
 AGENT_WAIT = os.path.join(ROOT, "home", ".local", "bin", "agent-wait")
 
 DELEGATED = "thread:delegated-task:command%3Amcp%3Aabc%3Adelegate-task%3Adef"
 ORCHESTRATOR = "mcp:launch:e71e088f"
 USER_HOOK = {"hooks": [{"type": "command", "command": "notify-send done"}]}
+CONFIG = {"claude": (".claude", "settings.json"), "codex": (".codex", "hooks.json")}
+# Without codex on PATH, install skips asking Codex to trust the hooks.
+NO_CODEX_PATH = os.path.dirname(sys.executable) + ":/usr/bin:/bin"
 
 
 class AgentGuardTest(unittest.TestCase):
@@ -33,6 +37,9 @@ class AgentGuardTest(unittest.TestCase):
         self.settings_path = os.path.join(self.home, ".claude", "settings.json")
         with open(self.settings_path, "w") as f:
             json.dump({"theme": "dark", "hooks": {"Stop": [USER_HOOK]}}, f)
+        os.makedirs(os.path.join(self.home, ".codex"))
+        with open(os.path.join(self.home, ".codex", "hooks.json"), "w") as f:
+            json.dump({"hooks": {"Stop": [USER_HOOK]}}, f)
         self.manage("install")
         self.manage("install")  # Redeploys must not stack copies.
         self.env = {k: v for k, v in os.environ.items()
@@ -47,24 +54,38 @@ class AgentGuardTest(unittest.TestCase):
             except ProcessLookupError:
                 pass
 
-    def manage(self, mode):
-        subprocess.run([sys.executable, CLAUDE_HOOKS, mode, self.home], check=True)
+    def manage(self, mode, path=NO_CODEX_PATH):
+        subprocess.run([sys.executable, AGENT_HOOKS, mode, self.home], check=True,
+                       env=dict(os.environ, PATH=path), stdout=subprocess.DEVNULL)
 
-    def settings(self):
-        with open(self.settings_path) as f:
+    def settings(self, harness="claude"):
+        with open(os.path.join(self.home, *CONFIG[harness])) as f:
             return json.load(f)
 
-    def guard_commands(self, event):
-        return [hook["command"] for group in self.settings().get("hooks", {}).get(event, [])
+    def guard_commands(self, event, harness="claude"):
+        return [hook["command"]
+                for group in self.settings(harness).get("hooks", {}).get(event, [])
                 for hook in group["hooks"] if hook not in USER_HOOK["hooks"]]
 
-    def fire(self, event, payload, thread=None, entrypoint="t3-code"):
-        """Run the installed hooks for EVENT; return the decisions they printed."""
+    def fire(self, event, payload, thread=None, entrypoint="t3-code", harness="claude",
+             originator="T3 Code", source="vscode"):
+        """Run the installed hooks for EVENT; return the decisions they printed.
+
+        Under Codex, the payload's transcript starts with a session_meta line
+        from ORIGINATOR and SOURCE, as Codex's rollouts do. Codex inherits the
+        Claude Code env of whoever started it, so the entrypoint stays set.
+        """
         env = dict(self.env, CLAUDE_CODE_ENTRYPOINT=entrypoint)
         if thread:
             env["T3CODE_THREAD_ID"] = thread
+        if harness == "codex":
+            transcript = os.path.join(self.home, "rollout.jsonl")
+            with open(transcript, "w") as f:
+                f.write(json.dumps({"type": "session_meta", "payload": {
+                    "originator": originator, "source": source}}) + "\n")
+            payload = dict(payload, transcript_path=transcript)
         decisions = []
-        for command in self.guard_commands(event):
+        for command in self.guard_commands(event, harness):
             result = subprocess.run(command, shell=True, input=json.dumps(payload), env=env,
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -77,8 +98,8 @@ class AgentGuardTest(unittest.TestCase):
                    "last_assistant_message": message}
         return any(d.get("decision") == "block" for d in self.fire("Stop", payload, **kwargs))
 
-    def ask_denied(self, **kwargs):
-        payload = {"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
+    def ask_denied(self, tool="AskUserQuestion", **kwargs):
+        payload = {"hook_event_name": "PreToolUse", "tool_name": tool,
                    "tool_input": {"questions": []}}
         return any(d.get("hookSpecificOutput", {}).get("permissionDecision") == "deny"
                    for d in self.fire("PreToolUse", payload, **kwargs))
@@ -86,11 +107,17 @@ class AgentGuardTest(unittest.TestCase):
     # Settings merge
 
     def test_install_keeps_user_settings_and_adds_one_copy(self):
-        settings = self.settings()
-        self.assertEqual(settings["theme"], "dark")
-        self.assertIn(USER_HOOK, settings["hooks"]["Stop"])
-        self.assertEqual(len(self.guard_commands("Stop")), 1)
-        self.assertEqual(len(self.guard_commands("PreToolUse")), 1)
+        self.assertEqual(self.settings()["theme"], "dark")
+        for harness in CONFIG:
+            with self.subTest(harness=harness):
+                self.assertIn(USER_HOOK, self.settings(harness)["hooks"]["Stop"])
+                self.assertEqual(len(self.guard_commands("Stop", harness)), 1)
+                self.assertEqual(len(self.guard_commands("PreToolUse", harness)), 1)
+
+    @unittest.skipUnless(shutil.which("codex"), "codex not installed")
+    def test_codex_trusts_the_installed_hooks(self):
+        self.manage("install", path=os.environ["PATH"])
+        self.assertEqual(sorted(codex_hook_trust(self.home).values()), ["trusted", "trusted"])
 
     def test_user_hook_sharing_a_group_with_ours_survives(self):
         settings = self.settings()
@@ -105,6 +132,7 @@ class AgentGuardTest(unittest.TestCase):
     def test_uninstall_removes_only_ours(self):
         self.manage("uninstall")
         self.assertEqual(self.settings(), {"theme": "dark", "hooks": {"Stop": [USER_HOOK]}})
+        self.assertEqual(self.settings("codex"), {"hooks": {"Stop": [USER_HOOK]}})
 
     # Prose questions (top-level sessions)
 
@@ -134,13 +162,28 @@ class AgentGuardTest(unittest.TestCase):
 
     def test_delegated_children_may_end_on_a_question(self):
         self.assertFalse(self.stop_blocks("Which schema should I use?", thread=DELEGATED))
+        self.assertFalse(self.stop_blocks("Which schema?", thread=DELEGATED, harness="codex"))
+
+    def test_codex_blocks_only_in_t3_sessions(self):
+        message = "Merged.\n\nShould I start the next PR?"
+        codex = dict(harness="codex", thread=ORCHESTRATOR)
+        self.assertTrue(self.stop_blocks(message, **codex))
+        self.assertFalse(self.stop_blocks(message, active=True, **codex))
+        self.assertFalse(self.stop_blocks("Merged #84.", **codex))
+        # `codex exec` (even one started inside a T3 session), a plain TUI and a
+        # Codex subagent have no picker in Default mode.
+        self.assertFalse(self.stop_blocks(message, source="exec", **codex))
+        self.assertFalse(self.stop_blocks(message, originator="codex-tui", **codex))
+        self.assertFalse(self.stop_blocks(message, source={"subagent": {}}, **codex))
 
     # Pickers
 
     def test_picker_denied_only_in_delegated_children(self):
-        self.assertTrue(self.ask_denied(thread=DELEGATED))
-        self.assertFalse(self.ask_denied(thread=ORCHESTRATOR))
-        self.assertFalse(self.ask_denied())
+        for harness, tool in [("claude", "AskUserQuestion"), ("codex", "request_user_input_async")]:
+            with self.subTest(harness=harness):
+                self.assertTrue(self.ask_denied(tool, thread=DELEGATED, harness=harness))
+                self.assertFalse(self.ask_denied(tool, thread=ORCHESTRATOR, harness=harness))
+                self.assertFalse(self.ask_denied(tool, harness=harness))
 
     # Unwaited jobs (delegated children)
 
@@ -165,6 +208,19 @@ class AgentGuardTest(unittest.TestCase):
         self.assertTrue(self.stop_blocks("Still running.", thread=DELEGATED))
         self.assertEqual(self.agent_wait("--pid", pid, "--log", log).returncode, 0)
         self.assertFalse(self.stop_blocks("The build passed.", thread=DELEGATED))
+
+    def test_codex_child_job_blocks_until_waited(self):
+        pid, log = self.start_job(0)
+        self.assertTrue(self.stop_blocks("Started.", active=True, thread=DELEGATED, harness="codex"))
+        self.agent_wait("--pid", pid, "--log", log)
+        self.assertFalse(self.stop_blocks("Passed.", thread=DELEGATED, harness="codex"))
+
+    def test_job_blocks_are_bounded_until_the_agent_waits(self):
+        pid, log = self.start_job(30)
+        blocks = [self.stop_blocks("Started.", active=True, thread=DELEGATED) for _ in range(9)]
+        self.assertEqual(blocks, [True] * 8 + [False])
+        self.assertEqual(self.agent_wait("--pid", pid, "--log", log, "--max-seconds", "0").returncode, 124)
+        self.assertTrue(self.stop_blocks("Still running.", thread=DELEGATED))
 
     def test_job_that_ended_unseen_still_blocks(self):
         pid, log = self.start_job(0)
@@ -195,6 +251,30 @@ class AgentGuardTest(unittest.TestCase):
             result = subprocess.run(command, shell=True, input="not json", env=self.env,
                                     capture_output=True, text=True, timeout=30)
             self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+
+def codex_hook_trust(home):
+    """Ask a real Codex for each agent-guard hook's trust status, by hook key."""
+    server = subprocess.Popen(["codex", "app-server"], stdin=subprocess.PIPE,
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                              env=dict(os.environ, CODEX_HOME=os.path.join(home, ".codex")))
+    try:
+        for request_id, method, params in [
+                (1, "initialize", {"clientInfo": {"name": "test", "version": "1"}}),
+                (2, "hooks/list", {"cwds": [home]})]:
+            server.stdin.write(json.dumps({"id": request_id, "method": method,
+                                           "params": params}) + "\n")
+            server.stdin.flush()
+            for line in server.stdout:
+                message = json.loads(line)
+                if message.get("id") == request_id:
+                    break
+        return {hook["key"]: hook["trustStatus"] for entry in message["result"]["data"]
+                for hook in entry["hooks"] if "agent-guard" in hook.get("command", "")}
+    finally:
+        server.stdin.close()
+        server.wait(timeout=30)
+        server.stdout.close()
 
 
 if __name__ == "__main__":

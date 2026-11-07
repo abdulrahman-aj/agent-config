@@ -128,6 +128,14 @@ def forget_job(pid):
         pass  # No record, or one we can't read: nothing to clear.
 
 
+def reset_blocks(pid):
+    """The agent is waiting, so agent-guard's count of blocks starts over."""
+    try:
+        os.remove(job_record(pid) + ".blocks")
+    except OSError:
+        pass
+
+
 def start(log, command):
     try:
         log_fd = open_regular(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
@@ -241,6 +249,7 @@ def main():
     # about a live job (say, a wrong --log) doesn't: the job is still unseen.
     if code != RUNNING and not (code == BAD_INPUT and start_time(args.pid) is not None):
         forget_job(args.pid)
+    reset_blocks(args.pid)
     return code
 
 

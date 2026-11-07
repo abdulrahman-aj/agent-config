@@ -9,7 +9,7 @@ Personal T3/harness config, deployed to `$HOME`.
 - `hosts/<hostname>/`: files stowed 1:1 on that machine only.
 - `scripts/link-shared.sh`: the 1:N fan-out links plus stale-link repair.
 - `scripts/deploy.sh`: pins `~/.local/share/agent-config` to origin/main and installs from it.
-- `scripts/claude-hooks.py`: merges agent-guard's hooks into `~/.claude/settings.json`.
+- `scripts/agent-hooks.py`: merges agent-guard's hooks into `~/.claude/settings.json` and `~/.codex/hooks.json`, and has Codex trust them.
 
 Placement rule: 1:1 files live under `home/` (or `hosts/<hostname>/`), and 1:N links go in the link script.
 

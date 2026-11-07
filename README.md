@@ -35,7 +35,7 @@ by `scripts/link-shared.sh` instead. Anything 1:1 lives under `home/` or `hosts/
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
 | `~/.local/bin/agent-wait`, `~/.local/bin/fleet-run` | `home/.local/bin/` |
 | `~/.claude/hooks/agent-guard` | `home/.claude/hooks/agent-guard` |
-| `~/.claude/settings.json` (hook entries merged in) | `scripts/claude-hooks.py` |
+| `~/.claude/settings.json`, `~/.codex/hooks.json` (hook entries merged in; Codex's trust of them in `~/.codex/config.toml`) | `scripts/agent-hooks.py` |
 | `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-arch-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
 
 Native directories remain real, so separately installed skills coexist.

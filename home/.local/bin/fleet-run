@@ -54,19 +54,26 @@ def job_record(host, pid):
     return os.path.join(state, "agent-jobs", f"{machine}-{pid}.json")
 
 
-def forget_job(host, pid):
-    """Delete the record once a wait has seen the job end, unless another thread owns it."""
+def waited(host, pid, code):
+    """Update the job's record after a wait returned CODE.
+
+    Any wait resets agent-guard's count of blocks (the agent is waiting). One
+    that saw the job end or stall deletes the record, unless another thread owns it.
+    """
     path = job_record(host, pid)
+    try:
+        os.remove(path + ".blocks")
+    except OSError:
+        pass
+    if code == RUNNING:
+        return
     try:
         with open(path) as f:
             owner = json.load(f).get("owner")
-    except (OSError, ValueError, AttributeError):
-        return
-    if owner == os.environ.get("T3CODE_THREAD_ID", owner):
-        try:
+        if owner == os.environ.get("T3CODE_THREAD_ID", owner):
             os.remove(path)
-        except FileNotFoundError:
-            pass
+    except (OSError, ValueError, AttributeError):
+        pass  # No record, or one we can't read: nothing to clear.
 
 
 def record_job(host, pid, log):
@@ -104,10 +111,9 @@ def main():
     starts_job = command[0] == "agent-wait" and "--start" in agent_wait_options(command)
     if not starts_job:
         code = subprocess.run(ssh, input=script.encode()).returncode
-        if command[0] == "agent-wait" and code != RUNNING:
-            pid = option(command, "--pid")
-            if pid:
-                forget_job(args.host, pid)
+        pid = option(command, "--pid") if command[0] == "agent-wait" else None
+        if pid:
+            waited(args.host, pid, code)
         return code
 
     # Capture the PID agent-wait prints so the job can be recorded.

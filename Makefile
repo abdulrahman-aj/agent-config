@@ -26,7 +26,7 @@ install: check-prereqs
 	@if $(HAS_HOST); then $(HOST_STOW) -R "$(HOST)"; fi
 	@bash scripts/link-shared.sh link "$(TARGET)"
 	@bash scripts/link-shared.sh record "$(TARGET)"
-	@python3 scripts/claude-hooks.py install "$(TARGET)"
+	@python3 scripts/agent-hooks.py install "$(TARGET)"
 
 check: check-prereqs
 	@test -d "$(TARGET)" || { \
@@ -47,7 +47,7 @@ uninstall:
 	@if [ -d "$(TARGET)" ] && $(HAS_HOST); then $(HOST_STOW) -D "$(HOST)"; fi
 	@bash scripts/link-shared.sh uninstall "$(TARGET)"
 	@bash scripts/link-shared.sh forget "$(TARGET)"
-	@if [ -d "$(TARGET)" ]; then python3 scripts/claude-hooks.py uninstall "$(TARGET)"; fi
+	@if [ -d "$(TARGET)" ]; then python3 scripts/agent-hooks.py uninstall "$(TARGET)"; fi
 
 check-prereqs:
 	@for cmd in stow cksum git python3; do command -v "$$cmd" >/dev/null || { echo "Missing required command: $$cmd" >&2; exit 1; }; done
