@@ -32,15 +32,9 @@ mkdir -p "$target/.codex"
 ln -s "$checkout/global/AGENTS.md" "$scratch/mid-instructions"
 ln -s "$scratch/mid-instructions" "$target/.codex/AGENTS.md"
 
-# A stale link from an earlier layout (agent-guard under ~/.claude/hooks) dangles
-# into the checkout and is swept on install.
-mkdir -p "$target/.claude/hooks"
-ln -s "$checkout/home/.claude/hooks/agent-guard" "$target/.claude/hooks/agent-guard"
-
 deploy install
 deploy install
 record_is || fail "repo record wrong"
-[[ ! -L "$target/.claude/hooks/agent-guard" ]] || fail "stale agent-guard link remains"
 [[ "$(realpath "$target/.config/environment.d/60-agent-heavy-jobs.conf")" == "$checkout/hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf" ]] \
     || fail "host file is not linked"
 deploy check

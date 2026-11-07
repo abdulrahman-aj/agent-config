@@ -34,7 +34,7 @@
 * **Delegate** for speed, cost or expertise. Brief fully, including how to verify, what is already known and the open questions. Load the `orchestrate` skill before you delegate through T3.
 * **Delegated work.** If another agent started you:
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
-  * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`, then the wait once more. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
+  * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
 * **Porting.** Document omissions and divergences in the target repository.
@@ -57,9 +57,9 @@ Use the cheapest model that is smart enough for the task. Use only these:
 | Machine | Hardware | Use for | Access |
 |---|---|---|---|
 | `zenbook-dux` (laptop) | 22 cores, 14 GiB RAM | Orchestration and light work, no VMs | Local, primary T3 host; shows `msi-dux` threads |
-| `msi-dux` (PC) | 16 cores, 30 GiB RAM, 2 GPUs | All VM work and long-running jobs, up to three 8 GiB VMs | T3 environment `msi-dux`, or `fleet-run msi-dux` |
+| `msi-dux` (PC) | 16 cores, 30 GiB RAM, 2 GPUs | All VM work and long-running jobs, up to three 8 GiB VMs | T3 environment `msi-dux`, or `tailscale ssh abdulrahman@msi-dux` |
 
 * Run heavy jobs (builds, VMs) on `msi-dux`. The laptop sets `AGENT_HEAVY_JOBS=deny`, and repos' heavy make targets (arch-niri-dux's builds and VMs) refuse to run while it's set. Check free RAM before starting a VM.
-* Run commands on `msi-dux` with `fleet-run msi-dux -- <command> [args…]` rather than a runner child, which burns a model's quota. For long jobs, use agent-wait on the remote side: `fleet-run msi-dux -- agent-wait --start --log <log> -- <command>`, then `fleet-run msi-dux -- agent-wait --pid <pid> --log <log>` until it stops exiting 124.
+* Run commands there with `tailscale ssh abdulrahman@msi-dux "bash -lc '<command>'"`. Its login shell is fish, and `bash -l` gives the login PATH (`~/.local/bin`, Nix). For long jobs, run agent-wait on the remote side: start with `agent-wait --start --log <log> -- <command>`, then repeat `agent-wait --pid <pid> --log <log>` until it stops exiting 124.
 * `msi-dux` dual-boots Windows. Never touch its physical disks or boot configuration.
 * `msi-dux` runs T3 as a headless background service. Its desktop app can't start while the service runs, so open its threads from the laptop.

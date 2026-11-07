@@ -8,7 +8,6 @@ Personal T3/harness config, deployed to `$HOME`.
 - `home/`: files stowed 1:1 (e.g. `home/.config/opencode/`).
 - `hosts/<hostname>/`: files stowed 1:1 on that machine only.
 - `scripts/link-shared.sh`: the 1:N fan-out links plus stale-link repair.
-- `scripts/agent-hooks.py`: merges agent-guard's hooks into `~/.claude/settings.json` and `~/.codex/hooks.json`, and has Codex trust them.
 
 Placement rule: 1:1 files live under `home/` (or `hosts/<hostname>/`), and 1:N links go in the link script.
 

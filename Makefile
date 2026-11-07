@@ -17,7 +17,6 @@ install: check-prereqs
 	@if $(HAS_HOST); then $(HOST_STOW) -R "$(HOST)"; fi
 	@bash scripts/link-shared.sh link "$(TARGET)"
 	@bash scripts/link-shared.sh record "$(TARGET)"
-	@python3 scripts/agent-hooks.py install "$(TARGET)"
 
 check: check-prereqs
 	@test -d "$(TARGET)" || { \
@@ -30,26 +29,24 @@ check: check-prereqs
 test: check-prereqs
 	@bash tests/test-deploy.sh
 	@python3 tests/test-agent-wait.py
-	@python3 tests/test-fleet-run.py
-	@python3 tests/test-agent-guard.py
 
 uninstall:
 	@if [ -d home ] && [ -d "$(TARGET)" ]; then $(STOW) $(STOW_FLAGS) -D home; fi
 	@if [ -d "$(TARGET)" ] && $(HAS_HOST); then $(HOST_STOW) -D "$(HOST)"; fi
 	@bash scripts/link-shared.sh uninstall "$(TARGET)"
 	@bash scripts/link-shared.sh forget "$(TARGET)"
-	@if [ -d "$(TARGET)" ]; then python3 scripts/agent-hooks.py uninstall "$(TARGET)"; fi
 
 check-prereqs:
-	@for cmd in stow cksum python3; do command -v "$$cmd" >/dev/null || { echo "Missing required command: $$cmd" >&2; exit 1; }; done
+	@for cmd in stow cksum; do command -v "$$cmd" >/dev/null || { echo "Missing required command: $$cmd" >&2; exit 1; }; done
 
 setup:
 	npm install --global ccusage
 
 help:
-	@echo "install (default) - deploy or refresh the links and hooks (run after adding/removing skills, or to repair links)"
+	@echo "install (default) - deploy or refresh the shared links (run after adding/removing skills, or to repair links)"
 	@echo "check             - dry-run without changing installed paths; picks up newly added skills"
-	@echo "test              - test deployment, scripts and hooks in temporary homes"
-	@echo "uninstall         - remove managed links and hooks (run before deleting the checkout)"
+	@echo "test              - test deployment and preservation in a temporary home"
+	@echo "uninstall         - remove managed links (run before deleting the checkout)"
 	@echo "setup             - install helper tooling (ccusage)"
-	@echo "TARGET=, HOST=    - deploy for another home or host folder"
+	@echo "TARGET=/path      - deploy for another home (with install, check)"
+	@echo "HOST=name         - stow hosts/<name>/ instead of the hostname's folder"
