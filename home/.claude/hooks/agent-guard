@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Claude Code hooks that enforce orchestration rules.
+
+agent-guard stop  - Stop hook. Delegated T3 children can't end a turn while a job
+                    they started with agent-wait (or fleet-run ... agent-wait)
+                    hasn't been waited out. Interactive top-level sessions can't
+                    end a turn on a question asked in prose.
+agent-guard ask   - PreToolUse hook on AskUserQuestion. Delegated children can't
+                    ask the user; their orchestrator answers.
+
+Reads the hook's JSON on stdin and prints a decision only when it blocks. Any
+error allows: a broken guard must never trap an agent.
+"""
+
+import json
+import os
+import re
+import sys
+
+# T3 gives delegate_task children thread ids with this prefix; the orchestrator's
+# thread (mcp:launch:..., or an app-created id) never has it.
+DELEGATED_PREFIX = "thread:delegated-task:"
+# Entrypoints that offer AskUserQuestion. `claude -p` (sdk-cli) and other SDK
+# hosts may not, and a prose question is all they can do.
+INTERACTIVE_ENTRYPOINTS = {"cli", "t3-code"}
+
+ASK_REASON = (
+    "Ask the user with AskUserQuestion (multiple choice, strongest option first, "
+    "marked recommended), or state the outcome instead of asking."
+)
+DELEGATED_ASK_REASON = (
+    "You're a delegated worker: end your turn with the question instead; "
+    "the orchestrator answers."
+)
+
+
+def jobs_dir():
+    state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    return os.path.join(state, "agent-jobs")
+
+
+def unwaited_job(owner):
+    """Return the wait command of a job this thread started and hasn't waited out.
+
+    agent-wait and fleet-run write a record on --start and delete it when a wait
+    returns anything but 124, so a record means "nobody has seen this job end".
+    Liveness isn't checked: a job that ended unseen still needs its result read.
+    """
+    try:
+        names = sorted(os.listdir(jobs_dir()))
+    except FileNotFoundError:
+        return None
+    for name in names:
+        try:
+            with open(os.path.join(jobs_dir(), name)) as f:
+                job = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if job.get("owner") == owner:
+            return job["wait"]
+    return None
+
+
+def strip_quoted(text):
+    """Drop code and quotations, where a question mark isn't ours to answer."""
+    text = re.sub(r"^ {0,3}(```|~~~).*?^ {0,3}\1[^\n]*$", "", text, flags=re.S | re.M)
+    text = re.sub(r"^ {0,3}(```|~~~).*", "", text, flags=re.S | re.M)  # unclosed fence
+    text = re.sub(r"^\s*>.*$", "", text, flags=re.M)
+    text = re.sub(r"`[^`\n]*`", "", text)
+    return re.sub(r"\"[^\"\n]*\"|“[^”\n]*”", "", text)
+
+
+def asks_in_prose(message):
+    """True when the final paragraph has a sentence ending in a question mark."""
+    paragraphs = [p for p in re.split(r"\n\s*\n", strip_quoted(message)) if p.strip()]
+    if not paragraphs:
+        return False
+    # "?" then optional closing punctuation, then whitespace or the end: this
+    # skips URLs like ?q=1.
+    return re.search(r"\?[)*_'\]]*(\s|$)", paragraphs[-1]) is not None
+
+
+def stop(event):
+    thread = os.environ.get("T3CODE_THREAD_ID", "")
+    if thread.startswith(DELEGATED_PREFIX):
+        # stop_hook_active is ignored on purpose: the block lifts as soon as a
+        # wait returns, and Claude Code's cap of 8 continuations without a tool
+        # call ends any loop where the model refuses to wait.
+        wait = unwaited_job(thread)
+        if wait:
+            return {"decision": "block", "reason": (
+                f"A job you started hasn't finished: run `{wait}` until it stops "
+                "returning 124, then act on the result (on 3, report the stall).")}
+        return None
+    if os.environ.get("CLAUDE_CODE_ENTRYPOINT") not in INTERACTIVE_ENTRYPOINTS:
+        return None
+    if event.get("stop_hook_active"):
+        return None  # Block once; if Claude still asks, the question stands.
+    if asks_in_prose(event.get("last_assistant_message") or ""):
+        return {"decision": "block", "reason": ASK_REASON}
+    return None
+
+
+def ask(event):
+    if not os.environ.get("T3CODE_THREAD_ID", "").startswith(DELEGATED_PREFIX):
+        return None
+    return {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "permissionDecision": "deny",
+        "permissionDecisionReason": DELEGATED_ASK_REASON,
+    }}
+
+
+def main():
+    try:
+        event = json.load(sys.stdin)
+        decision = {"stop": stop, "ask": ask}[sys.argv[1]](event)
+    except Exception as error:  # noqa: BLE001 - fail open, see the docstring
+        print(f"agent-guard: {error!r}", file=sys.stderr)
+        return 0
+    if decision:
+        print(json.dumps(decision))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

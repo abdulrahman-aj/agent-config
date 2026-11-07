@@ -57,10 +57,9 @@ Use the cheapest model that is smart enough for the task. Use only these:
 | Machine | Hardware | Use for | Access |
 |---|---|---|---|
 | `zenbook-arch-dux` (laptop) | 22 cores, 14 GiB RAM | Orchestration and light work, no VMs | Local, primary T3 host; shows `msi-dux` threads |
-| `msi-dux` (PC) | 16 cores, 30 GiB RAM, 2 GPUs | All VM work and long-running jobs, up to three 8 GiB VMs | T3 environment `msi-dux`, or `tailscale ssh abdulrahman@msi-dux` |
+| `msi-dux` (PC) | 16 cores, 30 GiB RAM, 2 GPUs | All VM work and long-running jobs, up to three 8 GiB VMs | T3 environment `msi-dux`, or `fleet-run msi-dux` |
 
-* Run all VM work on `msi-dux`. Check free RAM before starting a VM.
+* Run heavy jobs (builds, VMs) on `msi-dux`. The laptop sets `AGENT_HEAVY_JOBS=deny`, which makes heavy make targets refuse to run. Check free RAM before starting a VM.
+* Run commands on `msi-dux` with `fleet-run msi-dux -- <command> [args…]` rather than a runner child, which burns a model's quota. For long jobs, use agent-wait on the remote side: `fleet-run msi-dux -- agent-wait --start --log <log> -- <command>`, then `fleet-run msi-dux -- agent-wait --pid <pid> --log <log>` until it stops exiting 124.
 * `msi-dux` dual-boots Windows. Never touch its physical disks or boot configuration.
-* Both login shells are fish, so wrap remote commands in `bash -c`.
 * `msi-dux` runs T3 as a headless background service. Its desktop app can't start while the service runs, so open its threads from the laptop.
-* Tailscale SSH may ask the user for a browser check. T3 threads on `msi-dux` don't need SSH.
