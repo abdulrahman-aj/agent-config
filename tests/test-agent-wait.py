@@ -7,10 +7,11 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 AGENT_WAIT = os.path.join(os.path.dirname(__file__), "..", "home", ".local", "bin", "agent-wait")
-EXITED, BAD_INPUT, STALLED, STILL_RUNNING = 0, 2, 3, 124
+EXITED, BAD_INPUT, STALLED, JOB_FAILED, STILL_RUNNING = 0, 2, 3, 4, 124
 
 # Appends a line to the log every 0.2 s for the given number of seconds.
 WRITER = """
@@ -35,9 +36,10 @@ class AgentWaitTest(unittest.TestCase):
         for job in self.jobs:
             job.kill()
             job.wait()
+        # The supervisor leads its job's process group; kill both.
         for pid in self.detached:
             try:
-                os.kill(pid, signal.SIGKILL)
+                os.killpg(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
         self.tmp.cleanup()
@@ -78,9 +80,34 @@ class AgentWaitTest(unittest.TestCase):
         pid = self.launch("sleep", "60")
         self.assertEqual(self.wait("--pid", str(pid), "--max-seconds", "2"), STILL_RUNNING)
 
-    def test_started_job_can_be_waited_on_until_it_exits(self):
+    def test_started_job_that_succeeds_returns_exited(self):
         pid = self.launch("sh", "-c", "echo started; sleep 2")
         self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), EXITED)
+
+    def test_reports_a_failed_job_once_it_ends(self):
+        pid = self.launch("sh", "-c", "sleep 2; exit 42")
+        self.assertFalse(os.path.exists(self.log + ".exit"))
+        self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
+        self.assertTrue(os.path.exists(self.log + ".exit"))
+
+    def test_reports_the_status_of_a_job_that_ended_before_the_wait(self):
+        pid = self.launch("sh", "-c", "exit 42")
+        while os.path.exists(f"/proc/{pid}"):
+            time.sleep(0.1)
+        self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
+
+    def test_start_rejects_a_log_that_is_not_a_regular_file(self):
+        fifo = os.path.join(self.tmp.name, "fifo")
+        os.mkfifo(fifo)
+        result = subprocess.run([sys.executable, AGENT_WAIT, "--start", "--log", fifo,
+                                 "--", "true"], capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, BAD_INPUT)
+
+    def test_start_rejects_a_missing_command(self):
+        result = subprocess.run([sys.executable, AGENT_WAIT, "--start", "--log", self.log,
+                                 "--", "no-such-command-agent-wait"],
+                                capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, BAD_INPUT)
 
     def test_returns_exited_when_the_job_ends(self):
         # The job stays an unreaped child of this test, so it ends as a zombie.
