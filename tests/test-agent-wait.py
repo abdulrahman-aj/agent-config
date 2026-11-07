@@ -95,6 +95,15 @@ class AgentWaitTest(unittest.TestCase):
         self.wait_until_gone(pid)
         self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
 
+    def test_a_malformed_status_never_reports_success(self):
+        pid = self.launch("true")
+        self.wait_until_gone(pid)
+        for content in [b"--1", "²".encode(), b"\xff"]:
+            with self.subTest(content=content):
+                with open(self.log + ".exit", "wb") as f:
+                    f.write(content)
+                self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
+
     def test_a_signal_right_after_start_reaches_the_job(self):
         pid = self.launch("sleep", "60")
         os.kill(pid, signal.SIGTERM)

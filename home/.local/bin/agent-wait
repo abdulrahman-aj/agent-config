@@ -135,12 +135,11 @@ def read_status(log):
     """
     try:
         with open(status_path(log)) as f:
-            text = f.read().strip()
+            return int(f.read())
     except FileNotFoundError:
         return None
-    except OSError:
+    except (OSError, ValueError):  # ValueError covers bad text and bad UTF-8
         return PENDING
-    return int(text) if text.lstrip("-").isdigit() else PENDING
 
 
 def describe(status):
