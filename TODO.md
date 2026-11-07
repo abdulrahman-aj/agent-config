@@ -29,7 +29,7 @@ What enforces each orchestration rule. "Prose only" rows are candidates for a sc
 | Rule (location) | Enforced by |
 |---|---|
 | No ask-user or picker tools in delegated work (global) | Prose only. T3 surfaces child questions as `t3_pending_request`, which helps the orchestrator notice. |
-| Wait for your own jobs; report a stall (global) | `agent-wait` (exit codes 0, 3, 124; `tests/test-agent-wait.py`) |
+| Wait for your own jobs; report a stall (global) | `agent-wait --start` and `--pid` (exit codes 0, 3, 124; `tests/test-agent-wait.py`) |
 | Report a blocker after 10 minutes (global) | Prose only |
 | Commit and push WIP near a usage limit (global) | Prose only |
 | Home project (skill) | T3: a local `delegate_task` refuses another project |

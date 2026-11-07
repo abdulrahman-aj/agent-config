@@ -34,7 +34,7 @@
 * **Delegate** for speed, cost or expertise. Brief fully, including how to verify, what is already known and the open questions. Load the `orchestrate` skill before you delegate through T3.
 * **Delegated work.** If another agent started you:
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
-  * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it in the background with its output in a log, then run `agent-wait --pid <pid> --log <log>` again each time it exits 124. On exit 3 (stalled), end your turn and report the job's state and how to resume.
+  * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints its PID, then run `agent-wait --pid <pid> --log <log>` again each time it exits 124. On exit 3 (stalled), end your turn and report the job's state and how to resume.
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
   * If you near a usage limit, commit your changes as WIP on your task branch, push it if your brief allows, and report.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.

@@ -14,7 +14,7 @@ description: Rules for running T3 workers as delegate_task children. Load before
 * **Keep work moving.** While work remains, run independent work beside a blocked stream. End a turn only with a tracked child running, a picker question open, or the task done.
 * **Ask with the picker.** Ask the user with the picker, not in prose.
 * **Worker questions.** Check `t3_pending_request` on your children and answer their questions yourself.
-* **Waits in briefs.** OpenCode may run long jobs as background tasks T3 can't see (see "Confirm the stall"). When a brief includes a long job, write the wait as literal steps: `<job> > <log> 2>&1 & echo $!`, then `agent-wait --pid <pid> --log <log>` until it stops returning 124.
+* **Waits in briefs.** OpenCode may run long jobs as background tasks T3 can't see (see "Confirm the stall"). When a brief includes a long job, write the wait as literal steps: `agent-wait --start --log <log> -- <job>`, then `agent-wait --pid <pid> --log <log>` until it stops returning 124.
 
 ## Stalled and finished children
 * **Confirm the stall.** OpenCode resumes its model when a background job ends, even after T3 marked the run complete. Before you re-dispatch an OpenCode child, look for activity after that time in `~/.local/share/opencode/log/opencode.log` or with `pgrep -af`.
