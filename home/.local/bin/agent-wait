@@ -32,15 +32,16 @@ exit codes:
   2    bad input: invalid arguments, no such process (and no LOG.exit) or
        command, or the log isn't a regular file
   3    stalled: the log hasn't changed for --stall-minutes; report it
-  4    the job exited nonzero (from LOG.exit; the code is printed). Not 1,
-       which a Python crash would also return.
+  4    the job exited nonzero (from LOG.exit; the code is printed), or the
+       supervisor ended without recording a status. Not 1, which a Python
+       crash would also return.
   124  --max-seconds elapsed and the job still runs; call again
 
 limits:
   Stall age carries across calls through the log's mtime only, so a future
   mtime restarts the count, and a log deleted between calls makes the next
   call exit 2. If the supervisor is killed with SIGKILL, the job runs on
-  unwatched and --pid reports a plain exit with no status.
+  unwatched and --pid exits 4 with an unknown status.
 """
 
 
@@ -115,20 +116,64 @@ def last_line(path):
     return ""
 
 
+PENDING = "pending"
+
+
+def write_status(log, value):
+    """Write LOG.exit through a rename, so a reader never sees half a write."""
+    temporary = status_path(log) + ".tmp"
+    with open(temporary, "w") as f:
+        f.write(f"{value}\n")
+    os.replace(temporary, status_path(log))
+
+
 def read_status(log):
+    """Return the job's exit status, None if there's no LOG.exit, or PENDING.
+
+    PENDING means the supervisor never recorded an end: it was killed or
+    couldn't write. The job may even still be running.
+    """
     try:
         with open(status_path(log)) as f:
-            return int(f.read())
-    except (OSError, ValueError):
+            text = f.read().strip()
+    except FileNotFoundError:
         return None
+    except OSError:
+        return PENDING
+    return int(text) if text.lstrip("-").isdigit() else PENDING
 
 
-def supervise(log_fd, log, command):
+def describe(status):
+    """Return (exit code, hint) for a recorded status."""
+    if status == 0:
+        return EXITED, "the job exited 0"
+    if status == PENDING:
+        return JOB_FAILED, "no exit status recorded (supervisor killed or couldn't write); the job may still run"
+    return JOB_FAILED, f"the job exited {status}"
+
+
+def supervise(log_fd, ready_fd, log, command):
     """Run in the forked child: detach, run the job, record its exit status, exit.
 
     Never returns. Its stdout and stderr go to the log, so it doesn't hold the
     harness's output pipe open and the tool call can return.
     """
+    # Pass termination signals on to the job, then keep waiting, so the status
+    # file still records how the job ended. Signals that arrive before the job
+    # exists are queued and replayed once it does.
+    jobs, early = [], []
+
+    def forward(signum, frame):
+        if jobs:
+            jobs[0].send_signal(signum)
+        else:
+            early.append(signum)
+
+    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(signum, forward)
+    # Tell the launcher the handlers are in place; only then does it print our PID.
+    os.write(ready_fd, b"r")
+    os.close(ready_fd)
     os.setsid()
     devnull = os.open(os.devnull, os.O_RDONLY)
     os.dup2(devnull, 0)
@@ -137,27 +182,23 @@ def supervise(log_fd, log, command):
     # Drop every other inherited descriptor, such as a harness pipe that the
     # tool call waits on.
     os.closerange(3, os.sysconf("SC_OPEN_MAX"))
-    # Pass termination signals on to the job, then keep waiting, so the status
-    # file still records how the job ended. Installed before the job starts so
-    # an early signal can't kill the supervisor alone.
-    jobs = []
-    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(signum, lambda signum, frame: [job.send_signal(signum) for job in jobs])
     code = 127
     try:
         job = subprocess.Popen(command)
         jobs.append(job)
+        for signum in early:
+            job.send_signal(signum)
         returncode = job.wait()
         code = 128 - returncode if returncode < 0 else returncode
     except OSError as error:
         print(f"agent-wait: can't start {command[0]}: {error}", file=sys.stderr)
     finally:
-        # Write and rename, so a waiter never reads a half-written status.
-        temporary = status_path(log) + ".tmp"
+        # If this write fails, LOG.exit still says pending, and the waiter
+        # reports an unknown status instead of success.
         try:
-            with open(temporary, "w") as f:
-                f.write(f"{code}\n")
-            os.replace(temporary, status_path(log))
+            write_status(log, code)
+        except OSError as error:
+            print(f"agent-wait: can't record exit status {code}: {error}", file=sys.stderr)
         finally:
             os._exit(0)
 
@@ -171,16 +212,24 @@ def start(log, command):
     except OSError as error:
         print(f"agent-wait: log is not a writable regular file: {error}", file=sys.stderr)
         return BAD_INPUT
-    # A status file from an earlier run would make a waiter report the wrong result.
+    # Replaces any status from an earlier run, and proves the directory is
+    # writable before anything starts.
     try:
-        os.remove(status_path(log))
-    except FileNotFoundError:
-        pass
+        write_status(log, PENDING)
+    except OSError as error:
+        print(f"agent-wait: can't write {status_path(log)}: {error}", file=sys.stderr)
+        return BAD_INPUT
+    ready_read, ready_write = os.pipe()
     sys.stdout.flush()
     sys.stderr.flush()
     pid = os.fork()
     if pid == 0:
-        supervise(log_fd, log, command)
+        os.close(ready_read)
+        supervise(log_fd, ready_write, log, command)
+    os.close(ready_write)
+    if os.read(ready_read, 1) != b"r":
+        print("agent-wait: the supervisor died while starting", file=sys.stderr)
+        return BAD_INPUT
     print(pid)
     return EXITED
 
@@ -191,8 +240,9 @@ def wait(pid, log, stall_seconds, max_seconds):
         # A --start job may have finished before this call; its status says how.
         status = read_status(log) if log else None
         if status is not None:
-            print(f"agent-wait: pid {pid} already exited; the job exited {status}")
-            return EXITED if status == 0 else JOB_FAILED
+            code, hint = describe(status)
+            print(f"agent-wait: pid {pid} already exited; {hint}")
+            return code
         print(f"agent-wait: no running process with pid {pid}", file=sys.stderr)
         return BAD_INPUT
     signature = None
@@ -224,13 +274,11 @@ def wait(pid, log, stall_seconds, max_seconds):
         if start_time(pid) != identity:
             status = read_status(log) if log else None
             if status is None:
-                report("exited", "no exit status recorded; check the job's own result")
+                report("exited", "no LOG.exit (not started by --start); check the job's own result")
                 return EXITED
-            if status == 0:
-                report("exited", "the job exited 0")
-                return EXITED
-            report("exited", f"the job exited {status}")
-            return JOB_FAILED
+            code, hint = describe(status)
+            report("exited", hint)
+            return code
         if log:
             current = log_signature(log)
             # A deleted or replaced-by-nonfile log shows no progress; keep the old one.

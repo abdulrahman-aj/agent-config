@@ -76,6 +76,44 @@ class AgentWaitTest(unittest.TestCase):
             pass
         return pid
 
+    def wait_until_gone(self, pid):
+        """Wait until pid has exited, counting a zombie a slow subreaper hasn't reaped."""
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                with open(f"/proc/{pid}/stat") as f:
+                    if f.read().rsplit(")", 1)[1].split()[0] in ("Z", "X"):
+                        return
+            except FileNotFoundError:
+                return
+            time.sleep(0.1)
+        self.fail(f"pid {pid} still running")
+
+    def test_a_killed_supervisor_never_reports_success(self):
+        pid = self.launch("sleep", "60")
+        os.kill(pid, signal.SIGKILL)
+        self.wait_until_gone(pid)
+        self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
+
+    def test_a_signal_right_after_start_reaches_the_job(self):
+        pid = self.launch("sleep", "60")
+        os.kill(pid, signal.SIGTERM)
+        self.assertEqual(self.wait("--pid", str(pid), "--log", self.log,
+                                   "--max-seconds", "10"), JOB_FAILED)
+
+    def test_start_rejects_an_unwritable_log_directory(self):
+        directory = os.path.join(self.tmp.name, "locked")
+        os.mkdir(directory)
+        log = os.path.join(directory, "job.log")
+        open(log, "w").close()
+        os.chmod(directory, 0o500)
+        try:
+            result = subprocess.run([sys.executable, AGENT_WAIT, "--start", "--log", log,
+                                     "--", "true"], capture_output=True, timeout=10)
+        finally:
+            os.chmod(directory, 0o700)
+        self.assertEqual(result.returncode, BAD_INPUT)
+
     def test_started_job_survives_its_launcher(self):
         pid = self.launch("sleep", "60")
         self.assertEqual(self.wait("--pid", str(pid), "--max-seconds", "2"), STILL_RUNNING)
@@ -85,15 +123,15 @@ class AgentWaitTest(unittest.TestCase):
         self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), EXITED)
 
     def test_reports_a_failed_job_once_it_ends(self):
-        pid = self.launch("sh", "-c", "sleep 2; exit 42")
-        self.assertFalse(os.path.exists(self.log + ".exit"))
+        pid = self.launch("sh", "-c", "sleep 3; exit 42")
+        # No result while it runs, then the job's failure once it ends.
+        self.assertEqual(self.wait("--pid", str(pid), "--log", self.log, "--max-seconds", "0"),
+                         STILL_RUNNING)
         self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
-        self.assertTrue(os.path.exists(self.log + ".exit"))
 
     def test_reports_the_status_of_a_job_that_ended_before_the_wait(self):
         pid = self.launch("sh", "-c", "exit 42")
-        while os.path.exists(f"/proc/{pid}"):
-            time.sleep(0.1)
+        self.wait_until_gone(pid)
         self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
 
     def test_start_rejects_a_log_that_is_not_a_regular_file(self):
