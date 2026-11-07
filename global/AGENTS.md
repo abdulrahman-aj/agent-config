@@ -36,7 +36,6 @@
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
   * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
-  * If you near a usage limit, commit your changes as WIP on your task branch, push it if your brief allows, and report.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
 * **Porting.** Document omissions and divergences in the target repository.
 * **Review.** Before the user sees work, a different model family reviews it (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus). Check YAGNI first.
