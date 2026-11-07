@@ -12,7 +12,7 @@ record_key="$(printf '%s' "$target" | cksum | cut -d' ' -f1)"
 record_is() { [[ "$(cat "$XDG_CACHE_HOME/agent-config/repo.$record_key")" == "$(realpath "$checkout")" ]]; }
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
-deploy() { make -s -C "$checkout" "$@" TARGET="$target" HOST=zenbook-arch-dux >/dev/null; }
+deploy() { make -s -C "$checkout" "$@" TARGET="$target" HOST=zenbook-dux >/dev/null; }
 
 # Legacy double-hop links (via an intermediate alias, as the old farm made)
 # must be normalized to a single hop on install.
@@ -32,16 +32,16 @@ mkdir -p "$target/.codex"
 ln -s "$checkout/global/AGENTS.md" "$scratch/mid-instructions"
 ln -s "$scratch/mid-instructions" "$target/.codex/AGENTS.md"
 
-# Installing a dev checkout into the real home would make unmerged edits live.
-if HOME="$target" make -s -C "$checkout" install TARGET="$target" >/dev/null 2>&1; then
-    fail "install from a dev checkout into HOME was accepted"
-fi
-[[ ! -e "$target/.claude/CLAUDE.md" ]] || fail "refused install still linked files"
+# A stale link from an earlier layout (agent-guard under ~/.claude/hooks) dangles
+# into the checkout and is swept on install.
+mkdir -p "$target/.claude/hooks"
+ln -s "$checkout/home/.claude/hooks/agent-guard" "$target/.claude/hooks/agent-guard"
 
 deploy install
 deploy install
 record_is || fail "repo record wrong"
-[[ "$(realpath "$target/.config/environment.d/60-agent-heavy-jobs.conf")" == "$checkout/hosts/zenbook-arch-dux/.config/environment.d/60-agent-heavy-jobs.conf" ]] \
+[[ ! -L "$target/.claude/hooks/agent-guard" ]] || fail "stale agent-guard link remains"
+[[ "$(realpath "$target/.config/environment.d/60-agent-heavy-jobs.conf")" == "$checkout/hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf" ]] \
     || fail "host file is not linked"
 deploy check
 while IFS= read -r -d '' config; do
@@ -179,40 +179,4 @@ make -s -C "$checkout" uninstall TARGET="$scratch/nonexistent" >/dev/null
 [[ ! -e "$scratch/nonexistent" ]] || fail "check or uninstall created the missing target"
 [[ ! -L "$target/.config/environment.d/60-agent-heavy-jobs.conf" ]] || fail "host link remains"
 
-# Deploy runs from a pinned checkout of origin/main, so the dev checkout's
-# branches never reach running agents, and it takes over an old dev install.
-dev="$scratch/dev"
-pinned="$scratch/pinned"
-old_home="$scratch/old home"
-cp -R "$checkout" "$dev"
-git() { command git -c user.name=test -c user.email=test@example.com "$@"; }
-git -C "$dev" init -q -b main
-git -C "$dev" add -A
-git -C "$dev" commit -qm initial
-git clone -q --bare "$dev" "$scratch/origin.git"
-git -C "$dev" remote add origin "$scratch/origin.git"
-make -s -C "$dev" install TARGET="$old_home" HOST=zenbook-arch-dux >/dev/null
-pin() { make -s -C "$dev" deploy TARGET="$old_home" DEPLOY_DIR="$pinned" HOST=zenbook-arch-dux >/dev/null; }
-pin
-while IFS= read -r -d '' link; do
-    case "$(realpath -m "$link")" in
-        "$dev"/*) fail "link still points into the dev checkout: $link" ;;
-    esac
-done < <(find "$old_home" -type l -print0)
-[[ "$(realpath "$old_home/.claude/CLAUDE.md")" == "$pinned/global/AGENTS.md" ]] \
-    || fail "deploy did not link the pinned checkout"
-[[ "$(realpath "$old_home/.local/bin/agent-wait")" == "$pinned/home/.local/bin/agent-wait" ]] \
-    || fail "deploy did not relink stowed files"
-live="$(cat "$old_home/.claude/CLAUDE.md")"
-git -C "$dev" switch -qc feature
-printf 'branch instructions\n' > "$dev/global/AGENTS.md"
-git -C "$dev" commit -qam feature
-[[ "$(cat "$old_home/.claude/CLAUDE.md")" == "$live" ]] || fail "a dev branch changed live instructions"
-git -C "$dev" push -q origin feature:main
-pin
-grep -qx 'branch instructions' "$old_home/.claude/CLAUDE.md" || fail "deploy did not update to origin/main"
-printf 'stray edit\n' >> "$pinned/global/AGENTS.md"
-if pin 2>/dev/null; then
-    fail "deploy accepted local changes in the pinned checkout"
-fi
 echo "Agent Stow deployment test passed"

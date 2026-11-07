@@ -24,7 +24,9 @@ import subprocess
 import sys
 import threading
 
-MARKER = "/.claude/hooks/agent-guard"
+# Our hooks' commands end in one of these: the current path, then where earlier
+# versions installed agent-guard, so a reinstall drops those entries too.
+MARKERS = ("/.local/bin/agent-guard", "/.claude/hooks/agent-guard")
 # The picker tools each harness offers. Codex's T3 sessions offer
 # request_user_input_async; its Plan mode offers request_user_input.
 PICKERS = {"claude": "AskUserQuestion", "codex": "request_user_input|request_user_input_async"}
@@ -32,11 +34,11 @@ FILES = {"claude": (".claude", "settings.json"), "codex": (".codex", "hooks.json
 
 
 def ours(hook):
-    return MARKER in hook.get("command", "")
+    return any(marker in hook.get("command", "") for marker in MARKERS)
 
 
 def wanted(target, harness):
-    guard = shlex.quote(os.path.join(target, ".claude", "hooks", "agent-guard"))
+    guard = shlex.quote(os.path.join(target, ".local", "bin", "agent-guard"))
     command = lambda mode: {"type": "command", "command": f"{guard} {mode} {harness}"}
     return {
         "Stop": {"hooks": [command("stop")]},

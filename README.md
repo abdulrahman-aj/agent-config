@@ -6,15 +6,12 @@ Personal instructions, skills, and OpenCode config for T3.
 
 ```bash
 git clone https://github.com/abdulrahman-aj/agent-config.git ~/agent-config
-make -C ~/agent-config        # deploy origin/main
+make -C ~/agent-config
 make -C ~/agent-config setup  # helper tooling (ccusage)
 ```
 
-`make` (`make deploy`) clones or updates a pinned checkout at
-`~/.local/share/agent-config` to `origin/main` and links your home to it. Agents
-load only merged work, so branches in `~/agent-config` are safe. `make install`
-links the checkout you run it from, and refuses your home unless that checkout is
-the pinned one.
+The links point into `~/agent-config`, so edits there are live for every agent.
+Edit in a git worktree when a change shouldn't go live yet.
 
 ## One source
 
@@ -33,10 +30,9 @@ by `scripts/link-shared.sh` instead. Anything 1:1 lives under `home/` or `hosts/
 | `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
-| `~/.local/bin/agent-wait`, `~/.local/bin/fleet-run` | `home/.local/bin/` |
-| `~/.claude/hooks/agent-guard` | `home/.claude/hooks/agent-guard` |
+| `~/.local/bin/agent-wait`, `fleet-run`, `agent-guard` | `home/.local/bin/` |
 | `~/.claude/settings.json`, `~/.codex/hooks.json` (hook entries merged in; Codex's trust of them in `~/.codex/config.toml`) | `scripts/agent-hooks.py` |
-| `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-arch-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
+| `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
 
 Native directories remain real, so separately installed skills coexist.
 

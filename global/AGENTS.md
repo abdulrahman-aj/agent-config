@@ -56,7 +56,7 @@ Use the cheapest model that is smart enough for the task. Use only these:
 
 | Machine | Hardware | Use for | Access |
 |---|---|---|---|
-| `zenbook-arch-dux` (laptop) | 22 cores, 14 GiB RAM | Orchestration and light work, no VMs | Local, primary T3 host; shows `msi-dux` threads |
+| `zenbook-dux` (laptop) | 22 cores, 14 GiB RAM | Orchestration and light work, no VMs | Local, primary T3 host; shows `msi-dux` threads |
 | `msi-dux` (PC) | 16 cores, 30 GiB RAM, 2 GPUs | All VM work and long-running jobs, up to three 8 GiB VMs | T3 environment `msi-dux`, or `fleet-run msi-dux` |
 
 * Run heavy jobs (builds, VMs) on `msi-dux`. The laptop sets `AGENT_HEAVY_JOBS=deny`, and repos' heavy make targets (arch-niri-dux's builds and VMs) refuse to run while it's set. Check free RAM before starting a VM.

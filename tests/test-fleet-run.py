@@ -17,7 +17,7 @@ import unittest
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 FLEET_RUN = os.path.join(ROOT, "home", ".local", "bin", "fleet-run")
-AGENT_GUARD = os.path.join(ROOT, "home", ".claude", "hooks", "agent-guard")
+AGENT_GUARD = os.path.join(ROOT, "home", ".local", "bin", "agent-guard")
 
 STUB = """#!/bin/sh
 # tailscale ssh USER@HOST WORDS...: record the destination, run WORDS remotely.

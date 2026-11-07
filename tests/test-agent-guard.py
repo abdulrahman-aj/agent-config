@@ -22,6 +22,8 @@ AGENT_WAIT = os.path.join(ROOT, "home", ".local", "bin", "agent-wait")
 DELEGATED = "thread:delegated-task:command%3Amcp%3Aabc%3Adelegate-task%3Adef"
 ORCHESTRATOR = "mcp:launch:e71e088f"
 USER_HOOK = {"hooks": [{"type": "command", "command": "notify-send done"}]}
+# An entry from an earlier install, which kept agent-guard under ~/.claude/hooks.
+OLD_GUARD_HOOK = {"hooks": [{"type": "command", "command": "/old/.claude/hooks/agent-guard stop"}]}
 CONFIG = {"claude": (".claude", "settings.json"), "codex": (".codex", "hooks.json")}
 # Without codex on PATH, install skips asking Codex to trust the hooks.
 NO_CODEX_PATH = os.path.dirname(sys.executable) + ":/usr/bin:/bin"
@@ -31,12 +33,13 @@ class AgentGuardTest(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.home)
-        hooks_dir = os.path.join(self.home, ".claude", "hooks")
-        os.makedirs(hooks_dir)
-        shutil.copy(os.path.join(ROOT, "home", ".claude", "hooks", "agent-guard"), hooks_dir)
+        bin_dir = os.path.join(self.home, ".local", "bin")
+        os.makedirs(bin_dir)
+        shutil.copy(os.path.join(ROOT, "home", ".local", "bin", "agent-guard"), bin_dir)
+        os.makedirs(os.path.join(self.home, ".claude"))
         self.settings_path = os.path.join(self.home, ".claude", "settings.json")
         with open(self.settings_path, "w") as f:
-            json.dump({"theme": "dark", "hooks": {"Stop": [USER_HOOK]}}, f)
+            json.dump({"theme": "dark", "hooks": {"Stop": [USER_HOOK, OLD_GUARD_HOOK]}}, f)
         os.makedirs(os.path.join(self.home, ".codex"))
         with open(os.path.join(self.home, ".codex", "hooks.json"), "w") as f:
             json.dump({"hooks": {"Stop": [USER_HOOK]}}, f)
@@ -111,6 +114,7 @@ class AgentGuardTest(unittest.TestCase):
         for harness in CONFIG:
             with self.subTest(harness=harness):
                 self.assertIn(USER_HOOK, self.settings(harness)["hooks"]["Stop"])
+                self.assertNotIn(OLD_GUARD_HOOK, self.settings(harness)["hooks"]["Stop"])
                 self.assertEqual(len(self.guard_commands("Stop", harness)), 1)
                 self.assertEqual(len(self.guard_commands("PreToolUse", harness)), 1)
 
