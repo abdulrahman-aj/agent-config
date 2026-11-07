@@ -76,6 +76,13 @@ What's left are T3 issues to report upstream and project fixes.
   allow a local child in another registered project.
 
 ### Project fixes
+- [ ] **arch-niri-dux: build downloads have no network timeout.**
+  Evidence: the formatter worker (msi-dux thread `mcp:launch:316fb085f76ddb1f6d0568a364ceb8f094bf96c7a68777616a15a6640c43efc4`)
+  waited ~45 min on an ISO build whose builder VM had stalled on a download with no timeout
+  (`~/.cache/arch-niri-dux-build-formatters/guest-build.log` last written 02:36 local, VM at ~3% CPU). The
+  user noticed before any agent did; the architect restarted the build at ~03:23. The worker-side rule
+  (check progress, report a stall after 15 minutes) is in `global/AGENTS.md`. Fix: network fetches in the
+  build tooling need timeouts and retries.
 - [ ] **arch-niri-dux: per-worker build folders re-download large inputs.**
   Evidence: arch-niri-dux briefs give each worker a private `BUILD_STATE` to avoid the shared build lock.
   The formatter worker (msi-dux thread `mcp:launch:316fb085f76ddb1f6d0568a364ceb8f094bf96c7a68777616a15a6640c43efc4`)
