@@ -25,7 +25,8 @@ DELEGATED_PREFIX = "thread:delegated-task:"
 # Claude Code entrypoints that offer AskUserQuestion. `claude -p` (sdk-cli) and
 # other SDK hosts may not, and a prose question is all they can do.
 INTERACTIVE_ENTRYPOINTS = {"cli", "t3-code"}
-PICKERS = {"claude": "AskUserQuestion", "codex": "request_user_input_async"}
+PICKERS = {"claude": "AskUserQuestion",
+           "codex": "request_user_input_async (or request_user_input in Plan mode)"}
 # Neither harness may loop forever on a job: Codex has no cap on Stop-hook
 # continuations, so the guard lets the turn end after this many blocks in a row.
 # A wait that returns 124 (the agent is waiting) resets the count.

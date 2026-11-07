@@ -110,6 +110,7 @@ def record_job(pid, log):
         return
     path = job_record(pid)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    reset_blocks(pid)  # A reused PID starts with a fresh count.
     wait = f"agent-wait --pid {pid} --log {shlex.quote(os.path.abspath(log))}"
     with open(path + ".tmp", "w") as f:
         json.dump({"owner": owner, "wait": wait}, f)
@@ -124,6 +125,7 @@ def forget_job(pid):
             owner = json.load(f).get("owner")
         if owner == os.environ.get("T3CODE_THREAD_ID", owner):
             os.remove(path)
+            reset_blocks(pid)
     except (OSError, ValueError, AttributeError):
         pass  # No record, or one we can't read: nothing to clear.
 
@@ -249,7 +251,8 @@ def main():
     # about a live job (say, a wrong --log) doesn't: the job is still unseen.
     if code != RUNNING and not (code == BAD_INPUT and start_time(args.pid) is not None):
         forget_job(args.pid)
-    reset_blocks(args.pid)
+    if code == RUNNING:
+        reset_blocks(args.pid)
     return code
 
 

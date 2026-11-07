@@ -176,10 +176,20 @@ class AgentGuardTest(unittest.TestCase):
         self.assertFalse(self.stop_blocks(message, originator="codex-tui", **codex))
         self.assertFalse(self.stop_blocks(message, source={"subagent": {}}, **codex))
 
+    def test_codex_without_a_transcript_allows(self):
+        payload = {"hook_event_name": "Stop", "stop_hook_active": False,
+                   "last_assistant_message": "Should I go on?", "transcript_path": None}
+        for command in self.guard_commands("Stop", "codex"):
+            result = subprocess.run(command, shell=True, input=json.dumps(payload), timeout=30,
+                                    env=dict(self.env, T3CODE_THREAD_ID=ORCHESTRATOR),
+                                    capture_output=True, text=True)
+            self.assertEqual((result.returncode, result.stdout), (0, ""))
+
     # Pickers
 
     def test_picker_denied_only_in_delegated_children(self):
-        for harness, tool in [("claude", "AskUserQuestion"), ("codex", "request_user_input_async")]:
+        for harness, tool in [("claude", "AskUserQuestion"), ("codex", "request_user_input_async"),
+                              ("codex", "request_user_input")]:
             with self.subTest(harness=harness):
                 self.assertTrue(self.ask_denied(tool, thread=DELEGATED, harness=harness))
                 self.assertFalse(self.ask_denied(tool, thread=ORCHESTRATOR, harness=harness))

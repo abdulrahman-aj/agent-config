@@ -22,6 +22,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 
 MARKER = "/.claude/hooks/agent-guard"
 # The picker tools each harness offers. Codex's T3 sessions offer
@@ -87,16 +88,20 @@ def trust_codex_hooks(target):
     server = subprocess.Popen([codex, "app-server"], env=env, stdin=subprocess.PIPE,
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
 
+    # A hung server must not hang `make install`: kill it after a minute.
+    watchdog = threading.Timer(60, server.kill)
+    watchdog.start()
+
     def call(request_id, method, params):
         server.stdin.write(json.dumps({"id": request_id, "method": method, "params": params}) + "\n")
         server.stdin.flush()
-        for line in server.stdout:
+        for line in server.stdout:  # Skips notifications and other replies.
             message = json.loads(line)
             if message.get("id") == request_id:
                 if "error" in message:
                     raise RuntimeError(f"{method}: {message['error']}")
                 return message["result"]
-        raise RuntimeError(f"{method}: codex app-server exited")
+        raise RuntimeError(f"{method}: codex app-server exited (or timed out)")
 
     try:
         call(1, "initialize", {"clientInfo": {"name": "agent-config", "version": "1"}})
@@ -109,8 +114,13 @@ def trust_codex_hooks(target):
             call(3, "config/batchWrite", {"edits": [
                 {"keyPath": "hooks.state", "value": trust, "mergeStrategy": "upsert"}]})
     finally:
+        watchdog.cancel()
         server.stdin.close()
-        server.wait(timeout=30)
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait()
         server.stdout.close()
 
 

@@ -22,8 +22,8 @@ Long jobs: start them detached with agent-wait on the remote side, then wait in
 bounded steps, also on the remote side:
   fleet-run msi-dux -- agent-wait --start --log LOG -- COMMAND [ARG ...]
   fleet-run msi-dux -- agent-wait --pid PID --log LOG   # repeat while it exits 124
-Inside a T3 thread, fleet-run records the remote job, and Claude Code's
-agent-guard hook keeps the turn going until a wait returns anything but 124.
+Inside a T3 thread, fleet-run records the remote job, and the agent-guard hook
+(Claude Code, Codex) keeps the turn going until a wait returns 0, 3 or 4.
 After killing a job (kill -- -PID on the remote), run the wait once more.
 """
 
@@ -57,10 +57,14 @@ def job_record(host, pid):
 def waited(host, pid, code):
     """Update the job's record after a wait returned CODE.
 
-    Any wait resets agent-guard's count of blocks (the agent is waiting). One
-    that saw the job end or stall deletes the record, unless another thread owns it.
+    124 (still running) resets agent-guard's count of blocks: the agent is
+    waiting. 0, 3 or 4 (seen to end or stall) deletes the record and count,
+    unless another thread owns them. Anything else, such as 2 for a wrong --log
+    or 255 for SSH, changes nothing: the remote job's liveness is unknown here.
     """
     path = job_record(host, pid)
+    if code not in (0, 3, 4, RUNNING):
+        return
     try:
         os.remove(path + ".blocks")
     except OSError:
@@ -85,6 +89,10 @@ def record_job(host, pid, log):
         wait += ["--log", log]
     path = job_record(host, pid)
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:  # A reused PID starts with a fresh count.
+        os.remove(path + ".blocks")
+    except OSError:
+        pass
     with open(path + ".tmp", "w") as f:
         json.dump({"owner": owner, "wait": shlex.join(wait)}, f)
     os.replace(path + ".tmp", path)
