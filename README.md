@@ -27,6 +27,7 @@ by `scripts/link-shared.sh` instead — anything 1:1 lives under `home/`.
 | `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
+| `~/.local/bin/agent-wait` | `home/.local/bin/agent-wait` |
 
 Native directories remain real, so separately installed skills coexist.
 

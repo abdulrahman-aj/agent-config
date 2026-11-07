@@ -22,6 +22,7 @@ check: check-prereqs
 
 test: check-prereqs
 	@bash tests/test-deploy.sh
+	@python3 tests/test-agent-wait.py
 
 uninstall:
 	@if [ -d home ] && [ -d "$(TARGET)" ]; then $(STOW) $(STOW_FLAGS) -D home; fi
