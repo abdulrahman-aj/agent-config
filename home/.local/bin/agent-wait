@@ -1,295 +1,174 @@
 #!/usr/bin/env python3
-"""Start a long job, then wait for it in bounded steps and notice when it hangs.
+"""Start a long job detached, then wait for it in bounded steps and notice hangs.
 
-Agents that end their turn while a job runs are never resumed, and agents that
-wait on a hung job wait forever. `--start` launches the job under a detached
-supervisor, so it survives the agent's shell, and prints the supervisor's PID.
-The supervisor writes the job's exit status to LOG.exit, then exits. `--pid`
-waits on that PID for at most --max-seconds and treats a log unchanged for
---stall-minutes as a stall. Linux only: it reads /proc.
+--start runs the job under a small supervisor in a new session, so it survives
+the agent's shell, and prints the supervisor's PID. The supervisor records the
+job's exit status in LOG.exit. --pid waits on that PID for at most
+--max-seconds and calls a log unchanged for --stall-minutes a stall. Linux only.
 """
 
 import argparse
-import fcntl
 import math
 import os
-import shutil
-import signal
 import stat
 import subprocess
 import sys
 import time
 
-EXITED, BAD_INPUT, STALLED, JOB_FAILED, STILL_RUNNING = 0, 2, 3, 4, 124
-POLL_SECONDS = 1.0
-TAIL_BYTES = 4096
+EXITED, BAD_INPUT, STALLED, FAILED, RUNNING = 0, 2, 3, 4, 124
 
 EPILOG = """\
 exit codes:
-  0    --start: the job started; the supervisor's PID is on stdout
-       --pid: the process exited, and LOG.exit says the job exited 0, or there
-       is no LOG.exit (a job not started by --start; check its result yourself)
-  2    bad input: invalid arguments, no such process (and no LOG.exit) or
-       command, or the log isn't a regular file
+  0    started (--start), or the job exited 0, or it has no LOG.exit
+  2    bad input: arguments, no such process or LOG.exit, or a non-regular log
   3    stalled: the log hasn't changed for --stall-minutes; report it
-  4    the job exited nonzero (from LOG.exit; the code is printed), or the
-       supervisor ended without recording a status. Not 1, which a Python
-       crash would also return.
-  124  --max-seconds elapsed and the job still runs; call again
+  4    the job exited nonzero or its status is unknown (not 1: a crash's code)
+  124  still running after --max-seconds; call again
 
-limits:
-  Stall age carries across calls through the log's mtime only, so a future
-  mtime restarts the count, and a log deleted between calls makes the next
-  call exit 2. If the supervisor is killed with SIGKILL, the job runs on
-  unwatched and --pid exits 4 with an unknown status.
+To stop a job, kill its process group (kill -- -PID). Killing only the PID
+leaves the job running, and --pid then exits 4.
+
+Limits: stall age carries across calls only through the log's mtime, so a
+future mtime restarts the count, and a log deleted between calls gives 2.
 """
 
 
 def duration(text):
     value = float(text)
     if not math.isfinite(value) or value < 0:
-        raise argparse.ArgumentTypeError(f"must be a finite number >= 0, got {text!r}")
+        raise argparse.ArgumentTypeError(f"must be a finite number >= 0: {text!r}")
     return value
 
 
 def open_regular(path, flags):
-    """Open path nonblocking and return the descriptor if it's a regular file.
-
-    Nonblocking, so a FIFO or device can't hang the open; the type check runs
-    on the descriptor, so the file can't be swapped between check and use.
-    Raises OSError otherwise.
-    """
+    """Open nonblocking, so a FIFO can't hang us; check the type on the descriptor."""
     fd = os.open(path, flags | os.O_NONBLOCK | os.O_CLOEXEC, 0o644)
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
         raise OSError(f"not a regular file: {path}")
-    fcntl.fcntl(fd, fcntl.F_SETFL, fcntl.fcntl(fd, fcntl.F_GETFL) & ~os.O_NONBLOCK)
+    os.set_blocking(fd, True)
     return fd
 
 
-def status_path(log):
-    return log + ".exit"
+def write_status(log, value):
+    """Write LOG.exit through a rename, so a reader never sees half of it."""
+    with open(log + ".exit.tmp", "w") as f:
+        f.write(f"{value}\n")
+    os.replace(log + ".exit.tmp", log + ".exit")
+
+
+def read_status(log):
+    """Return the job's exit status, None if there's no LOG.exit, or "unknown"."""
+    try:
+        with open(log + ".exit") as f:
+            return int(f.read())
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):  # "pending", garbage, bad UTF-8
+        return "unknown"
 
 
 def start_time(pid):
-    """Return the process's start time from /proc, or None if it's gone or a zombie.
-
-    Comparing start times catches PID reuse: a new process with the same PID
-    has a different start time. A zombie has exited but not been reaped, so it
-    counts as gone.
-    """
+    """Return the process's start time (to catch PID reuse), or None if it's gone or a zombie."""
     try:
         with open(f"/proc/{pid}/stat") as f:
             text = f.read()
-    except (FileNotFoundError, ProcessLookupError):
-        return None
-    # The command name (field 2) may contain spaces and parentheses, so split
-    # after its closing parenthesis. Field 3 is the state, field 22 the start time.
-    fields = text[text.rindex(")") + 2 :].split()
-    if fields[0] in ("Z", "X"):
-        return None
-    return fields[19]
-
-
-def log_signature(path):
-    """Return (size, mtime_ns, mtime) of a regular file, or None if it's unavailable."""
-    try:
-        info = os.stat(path)
     except OSError:
         return None
-    if not stat.S_ISREG(info.st_mode):
-        return None
-    return info.st_size, info.st_mtime_ns, info.st_mtime
+    # The command name may contain spaces and parentheses. The fields after it
+    # start with the state (field 3); field 22 is the start time.
+    fields = text[text.rindex(")") + 2 :].split()
+    return None if fields[0] in ("Z", "X") else fields[19]
 
 
 def last_line(path):
     try:
-        fd = open_regular(path, os.O_RDONLY)
+        with os.fdopen(open_regular(path, os.O_RDONLY), "rb") as f:
+            f.seek(max(0, os.fstat(f.fileno()).st_size - 4096))
+            lines = f.read().decode(errors="replace").split("\n")
     except OSError:
         return ""
-    with os.fdopen(fd, "rb") as f:
-        f.seek(max(0, os.fstat(fd).st_size - TAIL_BYTES))
-        lines = f.read().decode(errors="replace").splitlines()
-    for line in reversed(lines):
-        if line.strip():
-            return line.strip()[-200:]
-    return ""
-
-
-PENDING = "pending"
-
-
-def write_status(log, value):
-    """Write LOG.exit through a rename, so a reader never sees half a write."""
-    temporary = status_path(log) + ".tmp"
-    with open(temporary, "w") as f:
-        f.write(f"{value}\n")
-    os.replace(temporary, status_path(log))
-
-
-def read_status(log):
-    """Return the job's exit status, None if there's no LOG.exit, or PENDING.
-
-    PENDING means the supervisor never recorded an end: it was killed or
-    couldn't write. The job may even still be running.
-    """
-    try:
-        with open(status_path(log)) as f:
-            return int(f.read())
-    except FileNotFoundError:
-        return None
-    except (OSError, ValueError):  # ValueError covers bad text and bad UTF-8
-        return PENDING
-
-
-def describe(status):
-    """Return (exit code, hint) for a recorded status."""
-    if status == 0:
-        return EXITED, "the job exited 0"
-    if status == PENDING:
-        return JOB_FAILED, "no exit status recorded (supervisor killed or couldn't write); the job may still run"
-    return JOB_FAILED, f"the job exited {status}"
-
-
-def supervise(log_fd, ready_fd, log, command):
-    """Run in the forked child: detach, run the job, record its exit status, exit.
-
-    Never returns. Its stdout and stderr go to the log, so it doesn't hold the
-    harness's output pipe open and the tool call can return.
-    """
-    # Pass termination signals on to the job, then keep waiting, so the status
-    # file still records how the job ended. Signals that arrive before the job
-    # exists are queued and replayed once it does.
-    jobs, early = [], []
-
-    def forward(signum, frame):
-        if jobs:
-            jobs[0].send_signal(signum)
-        else:
-            early.append(signum)
-
-    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
-        signal.signal(signum, forward)
-    # Tell the launcher the handlers are in place; only then does it print our PID.
-    os.write(ready_fd, b"r")
-    os.close(ready_fd)
-    os.setsid()
-    devnull = os.open(os.devnull, os.O_RDONLY)
-    os.dup2(devnull, 0)
-    os.dup2(log_fd, 1)
-    os.dup2(log_fd, 2)
-    # Drop every other inherited descriptor, such as a harness pipe that the
-    # tool call waits on.
-    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
-    code = 127
-    try:
-        job = subprocess.Popen(command)
-        jobs.append(job)
-        for signum in early:
-            job.send_signal(signum)
-        returncode = job.wait()
-        code = 128 - returncode if returncode < 0 else returncode
-    except OSError as error:
-        print(f"agent-wait: can't start {command[0]}: {error}", file=sys.stderr)
-    finally:
-        # If this write fails, LOG.exit still says pending, and the waiter
-        # reports an unknown status instead of success.
-        try:
-            write_status(log, code)
-        except OSError as error:
-            print(f"agent-wait: can't record exit status {code}: {error}", file=sys.stderr)
-        finally:
-            os._exit(0)
+    return next((line.strip()[-200:] for line in reversed(lines) if line.strip()), "")
 
 
 def start(log, command):
-    if shutil.which(command[0]) is None:
-        print(f"agent-wait: command not found: {command[0]}", file=sys.stderr)
-        return BAD_INPUT
     try:
         log_fd = open_regular(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
+        # Replaces a status from an earlier run. A supervisor that dies before
+        # replacing it leaves "pending", which the waiter reports as unknown.
+        write_status(log, "pending")
     except OSError as error:
-        print(f"agent-wait: log is not a writable regular file: {error}", file=sys.stderr)
+        print(f"agent-wait: {error}", file=sys.stderr)
         return BAD_INPUT
-    # Replaces any status from an earlier run, and proves the directory is
-    # writable before anything starts.
-    try:
-        write_status(log, PENDING)
-    except OSError as error:
-        print(f"agent-wait: can't write {status_path(log)}: {error}", file=sys.stderr)
-        return BAD_INPUT
-    ready_read, ready_write = os.pipe()
     sys.stdout.flush()
-    sys.stderr.flush()
     pid = os.fork()
-    if pid == 0:
-        os.close(ready_read)
-        supervise(log_fd, ready_write, log, command)
-    os.close(ready_write)
-    if os.read(ready_read, 1) != b"r":
-        print("agent-wait: the supervisor died while starting", file=sys.stderr)
-        return BAD_INPUT
-    print(pid)
-    return EXITED
+    if pid:
+        print(pid)
+        return EXITED
+    # The supervisor. A new session survives the harness killing the calling
+    # shell's process group. Pointing 0-2 away from the harness's pipes and
+    # closing the rest lets the tool call return at once.
+    os.setsid()
+    os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
+    os.dup2(log_fd, 1)
+    os.dup2(log_fd, 2)
+    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
+    try:
+        returncode = subprocess.call(command)
+        write_status(log, 128 - returncode if returncode < 0 else returncode)
+    except OSError as error:
+        # An unknown command, or LOG.exit can't be written: it stays "pending",
+        # which the waiter reports as unknown, never as success.
+        print(f"agent-wait: {error}", file=sys.stderr)
+    os._exit(0)
 
 
 def wait(pid, log, stall_seconds, max_seconds):
     identity = start_time(pid)
-    if identity is None:
-        # A --start job may have finished before this call; its status says how.
-        status = read_status(log) if log else None
-        if status is not None:
-            code, hint = describe(status)
-            print(f"agent-wait: pid {pid} already exited; {hint}")
-            return code
+    # A job that ended before this call still has its LOG.exit.
+    if identity is None and (not log or read_status(log) is None):
         print(f"agent-wait: no running process with pid {pid}", file=sys.stderr)
         return BAD_INPUT
-    signature = None
     if log:
         try:
             os.close(open_regular(log, os.O_RDONLY))
         except OSError as error:
-            print(f"agent-wait: log is not a readable regular file: {error}", file=sys.stderr)
+            print(f"agent-wait: bad log: {error}", file=sys.stderr)
             return BAD_INPUT
-        signature = log_signature(log)
-
+        info = os.stat(log)
+        signature = (info.st_size, info.st_mtime_ns)
+        # Stall age counts from the log's last change, so repeated calls keep
+        # counting. Later changes use the monotonic clock; a future mtime is "now".
+        changed_at = time.monotonic() - max(0.0, time.time() - info.st_mtime)
     started = time.monotonic()
-    # Stall time counts from the log's last change, not from this call, so
-    # repeated calls keep counting from the job's real progress. Later changes
-    # are timed on the monotonic clock; a future mtime counts as "just now".
-    changed_at = None
-    if signature:
-        changed_at = started - max(0.0, time.time() - signature[2])
 
-    def report(state, hint):
+    def finish(code, state, hint):
         parts = [f"agent-wait: pid {pid} {state} after {time.monotonic() - started:.0f}s"]
         if log:
             parts.append(f"log last changed {time.monotonic() - changed_at:.0f}s ago")
             parts.append(f"last line: {last_line(log)!r}")
-        parts.append(hint)
-        print("; ".join(parts))
+        print("; ".join(parts + [hint]))
+        return code
 
     while True:
-        if start_time(pid) != identity:
+        if identity is None or start_time(pid) != identity:
             status = read_status(log) if log else None
-            if status is None:
-                report("exited", "no LOG.exit (not started by --start); check the job's own result")
-                return EXITED
-            code, hint = describe(status)
-            report("exited", hint)
-            return code
+            hints = {None: "no LOG.exit; check the job's own result", 0: "the job exited 0",
+                     "unknown": "no exit status recorded; see the log, the job may still run"}
+            return finish(EXITED if status in (None, 0) else FAILED, "exited",
+                          hints.get(status, f"the job exited {status}"))
         if log:
-            current = log_signature(log)
-            # A deleted or replaced-by-nonfile log shows no progress; keep the old one.
-            if current is not None and current[:2] != signature[:2]:
-                signature, changed_at = current, time.monotonic()
+            try:
+                info = os.stat(log)
+                if stat.S_ISREG(info.st_mode) and (info.st_size, info.st_mtime_ns) != signature:
+                    signature, changed_at = (info.st_size, info.st_mtime_ns), time.monotonic()
+            except OSError:
+                pass  # A deleted log shows no progress.
             if time.monotonic() - changed_at >= stall_seconds:
-                report("stalled", "report it with the job's state")
-                return STALLED
+                return finish(STALLED, "stalled", "report it with the job's state")
         if time.monotonic() - started >= max_seconds:
-            report("still running", "call agent-wait again")
-            return STILL_RUNNING
-        time.sleep(POLL_SECONDS)
+            return finish(RUNNING, "still running", "call agent-wait again")
+        time.sleep(1)
 
 
 def main():
@@ -297,21 +176,17 @@ def main():
         description=__doc__.split("\n\n")[1].replace("\n", " "),
         usage="agent-wait --start --log LOG -- COMMAND [ARG ...]\n"
               "       agent-wait --pid PID [--log LOG] [--stall-minutes M] [--max-seconds S]",
-        epilog=EPILOG,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+        epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--start", action="store_true",
-                      help="start COMMAND detached with its output in LOG and print a PID to wait on")
+    mode.add_argument("--start", action="store_true", help="start COMMAND detached; print a PID")
     mode.add_argument("--pid", type=int, help="the PID --start printed, or any job's PID")
     parser.add_argument("--log", help="the job's output file; enables stall detection and exit status")
     parser.add_argument("--stall-minutes", type=duration, default=15.0,
-                        help="report a stall when the log is unchanged this long (default 15)")
+                        help="report a stall after the log is unchanged this long (default 15)")
     parser.add_argument("--max-seconds", type=duration, default=540.0,
                         help="return 124 after this long if the job still runs (default 540)")
     parser.add_argument("command", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     args = parser.parse_args()
-
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
     if args.start:
         if not args.log or not command:

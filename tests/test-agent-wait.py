@@ -104,9 +104,9 @@ class AgentWaitTest(unittest.TestCase):
                     f.write(content)
                 self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
 
-    def test_a_signal_right_after_start_reaches_the_job(self):
+    def test_killing_the_process_group_gives_failed(self):
         pid = self.launch("sleep", "60")
-        os.kill(pid, signal.SIGTERM)
+        os.killpg(pid, signal.SIGTERM)
         self.assertEqual(self.wait("--pid", str(pid), "--log", self.log,
                                    "--max-seconds", "10"), JOB_FAILED)
 
@@ -150,11 +150,9 @@ class AgentWaitTest(unittest.TestCase):
                                  "--", "true"], capture_output=True, timeout=10)
         self.assertEqual(result.returncode, BAD_INPUT)
 
-    def test_start_rejects_a_missing_command(self):
-        result = subprocess.run([sys.executable, AGENT_WAIT, "--start", "--log", self.log,
-                                 "--", "no-such-command-agent-wait"],
-                                capture_output=True, timeout=10)
-        self.assertEqual(result.returncode, BAD_INPUT)
+    def test_a_missing_command_ends_as_failed(self):
+        pid = self.launch("no-such-command-agent-wait")
+        self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), JOB_FAILED)
 
     def test_returns_exited_when_the_job_ends(self):
         # The job stays an unreaped child of this test, so it ends as a zombie.
