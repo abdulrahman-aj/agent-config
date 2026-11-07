@@ -84,7 +84,7 @@ class AgentWaitTest(unittest.TestCase):
                 with open(f"/proc/{pid}/stat") as f:
                     if f.read().rsplit(")", 1)[1].split()[0] in ("Z", "X"):
                         return
-            except FileNotFoundError:
+            except OSError:  # gone, possibly mid-read (ESRCH)
                 return
             time.sleep(0.1)
         self.fail(f"pid {pid} still running")

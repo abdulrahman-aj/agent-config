@@ -131,11 +131,12 @@ def wait(pid, log, stall_seconds, max_seconds):
         return BAD_INPUT
     if log:
         try:
-            os.close(open_regular(log, os.O_RDONLY))
+            fd = open_regular(log, os.O_RDONLY)
+            info = os.fstat(fd)
+            os.close(fd)
         except OSError as error:
             print(f"agent-wait: bad log: {error}", file=sys.stderr)
             return BAD_INPUT
-        info = os.stat(log)
         signature = (info.st_size, info.st_mtime_ns)
         # Stall age counts from the log's last change, so repeated calls keep
         # counting. Later changes use the monotonic clock; a future mtime is "now".
