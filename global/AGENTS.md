@@ -31,7 +31,7 @@
 # Workflow
 * **Dev environments.** Use the project's Nix dev shell, or add one if none exists.
 * **Reusable tasks.** Do repeatable work through deterministic scripts (for example interact, debug, verify) and expose new ones through the Makefile or similar. Reuse existing scripts before writing new ones.
-* **Delegate** for speed, cost or expertise. Brief fully, including how to verify, what is already known and the open questions. Load the `orchestrate` skill before you delegate through T3.
+* **Delegate** for speed, cost or expertise. Brief fully, including how to verify, what is already known and, for research, the open questions. Load the `orchestrate` skill before you delegate through T3.
 * **Delegated work.** If another agent started you:
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
   * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
