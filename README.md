@@ -31,10 +31,18 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 | `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
+| `~/.claude/settings.json` | `home/.claude/settings.json` |
 | `~/.local/bin/agent-wait` | `home/.local/bin/agent-wait` |
 | `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
 
 Native directories remain real, so separately installed skills coexist.
+
+`~/.claude/settings.json` is plain JSON, so its reasons live here. It compacts at 400k (about 367k in practice)
+instead of the ~967k default, because every request re-reads the whole context, and pins the 1-hour prompt cache.
+Leave `subagentPromptCacheTtl` unset: T3 would apply it to delegate children, whose cache would then expire during
+build waits. Claude Code writes `/autocompact` and `/config` changes through the link into this repo, and under T3
+a change applies when T3 next starts the Claude process. Evidence:
+[PR #13](https://github.com/abdulrahman-aj/agent-config/pull/13).
 
 Restart the harness or refresh the skill catalog to see edited instructions or
 newly deployed skills. Changes to `environment.d` apply after the next login.

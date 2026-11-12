@@ -1,0 +1,5 @@
+{
+  "theme": "dark",
+  "autoCompactWindow": 400000,
+  "promptCacheTtl": "1h"
+}
