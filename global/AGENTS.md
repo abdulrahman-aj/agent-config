@@ -37,7 +37,7 @@
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
   * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
-* **Bug discipline.** Fix the root cause, not the symptom. First build the cheapest command that goes red on this bug. Then test one named hypothesis per run. After two runs that change nothing, stop and report. Add a regression test when the bug could plausibly recur.
+* **Bug discipline.** Fix the root cause, not the symptom. First build the cheapest command that goes red on this bug. Then test one named hypothesis per run. After two runs with the same result, stop and report. Add a regression test when the bug could plausibly recur.
 * **Project rules.** Put durable project rules in the repo's `AGENTS.md`, not in agent memory, so every harness and reviewer sees them.
 * **Porting.** Document omissions and divergences in the target repository.
 * **Review.** Before the user sees work, a different model family reviews it. Check YAGNI first.
@@ -51,7 +51,7 @@ Use the cheapest model that is smart enough for the task. Use only these:
 |---|---|---|---|---|---|
 | Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | Architect: design, grilling, orchestration and review. Also a delegate for the hardest open or vague tasks: one Opus child at a time, launched only by the top-level orchestrator. | highest | high |
 | Sol 6.1 | `gpt-6.1-sol` (Codex) | `high` | Foundational implementation and hard reasoning | highest | high |
-| Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research and scoped tasks | high | low |
+| Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research and scoped implementation | high | low |
 | GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Default reviewer and fallback | high | low |
 
 # Fleet

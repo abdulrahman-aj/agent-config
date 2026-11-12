@@ -11,5 +11,5 @@ description: Rules for running T3 workers as delegate_task children. Load before
 * **OpenCode children.** Always set `target.providerInstanceId: "opencode"`. Without it, T3 silently runs the task on another provider.
 * **Context.** Children do the bulk reading and report summaries.
 * **Worker questions.** Check `t3_pending_request` on your children and answer their questions yourself.
-* **Waits in briefs.** When a brief includes a long job, write the wait as literal steps: `agent-wait --start --log <log> -- <job>`, then `agent-wait --pid <pid> --log <log>` until it stops returning 124.
+* **Waits in briefs.** When a brief includes a long job, write the wait as literal steps: `agent-wait --start --log <log> -- <job>`, then `agent-wait --pid <pid> --log <log>` until it stops exiting 124.
 * **Blind reviews.** Give the reviewer the task statement and the diff, never your findings. It lists what the task didn't ask for or could be simpler, then defects with a `file:line` or a failing command, then what it dismissed. After two rounds, decide yourself.
