@@ -32,6 +32,7 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
 | `~/.claude/settings.json` | `home/.claude/settings.json` |
+| `~/.claude/skills/heartbeat` (Claude only) | `home/.claude/skills/heartbeat/` |
 | `~/.local/bin/agent-wait` | `home/.local/bin/agent-wait` |
 | `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
 
@@ -54,8 +55,8 @@ Every request re-reads the whole context, so each harness gets a bounded context
   window, about 400–420k on the 1M Muse and GLM models. The default waits until 85%.
 
 A turn inside Claude's 1-hour cache keeps it warm, so orchestrators heartbeat at 55 minutes while work is in
-flight (see the `orchestrate` skill). Codex and OpenCode caches are short-lived, best effort and cheap to
-miss, so they get no keep-alive.
+flight: the user triggers the Claude-only `/heartbeat` skill once per thread. Codex and OpenCode caches are
+short-lived, best effort and cheap to miss, so they get no keep-alive.
 
 Restart the harness or refresh the skill catalog to see edited instructions or
 newly deployed skills. Changes to `environment.d` apply after the next login.
