@@ -37,25 +37,12 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 
 Native directories remain real, so separately installed skills coexist.
 
-## Context and cache settings
-
-Every request re-reads the whole context, so each harness gets a bounded context. Evidence and numbers are in
+`~/.claude/settings.json` is plain JSON, so its reasons live here. It compacts at 400k (about 367k in practice)
+instead of the ~967k default, because every request re-reads the whole context, and pins the 1-hour prompt cache.
+Leave `subagentPromptCacheTtl` unset: T3 would apply it to delegate children, whose cache would then expire during
+build waits. Claude Code writes `/autocompact` and `/config` changes through the link into this repo, and under T3
+a change applies when T3 next starts the Claude process. Evidence:
 [PR #13](https://github.com/abdulrahman-aj/agent-config/pull/13).
-
-- **Claude Code** (`~/.claude/settings.json`): `autoCompactWindow: 400000` compacts at about 367k (the window
-  minus a ~33k reserve) instead of the ~967k default on 1M models. `promptCacheTtl: "1h"` pins the 1-hour
-  cache, which otherwise drops to 5 minutes on usage credits. Leave `subagentPromptCacheTtl` unset: T3 applies
-  it to delegate children, and a 5-minute cache would expire during every build wait. Claude Code writes
-  `/autocompact` and `/config` changes through the link into this repo, so they show up as a diff here.
-  Under T3, a change takes effect when T3 next starts the Claude process, which can be several turns later.
-- **Codex**: no file. `gpt-6.1-sol` already runs a 500k window and compacts at 450k, and Codex has no
-  cache-lifetime setting. To compact earlier, set `model_auto_compact_token_limit` in `~/.codex/config.toml`.
-- **OpenCode** (`~/.config/opencode/opencode.jsonc`): `compaction.buffer: "60%"` compacts at 40% of the
-  window, about 400–420k on the 1M Muse and GLM models. The default waits until 85%.
-
-Orchestrators run the user-triggered `/heartbeat` skill: a 55-minute check-in that keeps work moving while the
-user is away. On Claude it also keeps the 1-hour cache warm; Codex and OpenCode caches are short-lived and cheap
-to miss, so they need no keep-alive of their own.
 
 Restart the harness or refresh the skill catalog to see edited instructions or
 newly deployed skills. Changes to `environment.d` apply after the next login.
