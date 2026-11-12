@@ -47,10 +47,11 @@ Every request re-reads the whole context, so each harness gets a bounded context
   cache, which otherwise drops to 5 minutes on usage credits. Leave `subagentPromptCacheTtl` unset: T3 applies
   it to delegate children, and a 5-minute cache would expire during every build wait. Claude Code writes
   `/autocompact` and `/config` changes through the link into this repo, so they show up as a diff here.
+  Under T3, a change takes effect when T3 next starts the Claude process, which can be several turns later.
 - **Codex**: no file. `gpt-6.1-sol` already runs a 500k window and compacts at 450k, and Codex has no
   cache-lifetime setting. To compact earlier, set `model_auto_compact_token_limit` in `~/.codex/config.toml`.
 - **OpenCode** (`~/.config/opencode/opencode.jsonc`): `compaction.buffer: "60%"` compacts at 40% of the
-  window, about 400k on the 1M Muse and GLM models. The default waits until 85%.
+  window, about 400–420k on the 1M Muse and GLM models. The default waits until 85%.
 
 A turn inside Claude's 1-hour cache keeps it warm, so orchestrators heartbeat at 55 minutes while work is in
 flight (see the `orchestrate` skill). Codex and OpenCode caches are short-lived, best effort and cheap to
