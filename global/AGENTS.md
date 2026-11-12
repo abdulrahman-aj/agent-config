@@ -1,7 +1,7 @@
 # Personal
 
 * **Prose.** State the outcome. Be concise.
-* **Ask early** about scope, behavior, cost and reversibility. Otherwise proceed on reversible work and show the result; ask only for decisions that are the user's.
+* **Ask early** about scope, behavior, cost and reversibility. For reversible work, proceed and show the result; ask only for decisions that are the user's.
 * **Questions.** Ask multiple-choice questions with the strongest option first, marked `(recommended)`. Batch up to 5.
 
 # Software design
