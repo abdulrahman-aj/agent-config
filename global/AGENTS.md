@@ -1,7 +1,7 @@
 # Personal
 
 * **Prose.** State the outcome. Be concise.
-* **Ask early** about scope, behavior, cost and reversibility.
+* **Ask early** about scope, behavior, cost and reversibility. For reversible work, proceed and show the result; ask only for decisions that are the user's.
 * **Questions.** Ask multiple-choice questions with the strongest option first, marked `(recommended)`. Batch up to 5.
 
 # Software design
@@ -15,12 +15,13 @@
 * **Readability.** Prefer readable code over compact code.
 * **Locality of behavior.** Keep related code together.
 * **Comments.** Explain why, not what: rationale, invariants, performance and constraints.
+* **Docs.** State each fact once, where readers look first. Don't restate what code, config or `--help` shows. Replace stale lines; don't append history.
 * **Shell.** Don't embed Python in `.sh` files. Write a `.py` file instead.
 
 # Testing
 * **Always verify.** Claim success only with evidence. Running the real thing counts; evidence isn't always a new test. Report what you ran and what it showed.
 * **Test what you fear.** Commit tests for logic that is likely or costly to break. Skip tests for declarative config, docs and trivial changes.
-* **Behavior over implementation.** Test observable behavior. Never assert file contents, exact strings or mocked command sequences.
+* **Behavior over implementation.** Test observable behavior. Keep a test only if it fails when the behavior breaks and still passes when only internals change.
 
 # Refactoring
 * **Before the change.** Refactor first when it makes the change simpler or safer.
@@ -36,9 +37,10 @@
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
   * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
-* **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
+* **Bug discipline.** Fix the root cause, not the symptom. First build the cheapest command that goes red on this bug. Then test one named hypothesis per run. After two runs with the same result, stop and report. Add a regression test when the bug could plausibly recur.
+* **Project rules.** Put durable project rules in the repo's `AGENTS.md`, not in agent memory, so every harness and reviewer sees them.
 * **Porting.** Document omissions and divergences in the target repository.
-* **Review.** Before the user sees work, a different model family reviews it (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus). Check YAGNI first.
+* **Review.** Before the user sees work, a different model family reviews it. Check YAGNI first.
 * **PRs only.** Land work through PRs. Never push to main or rewrite history.
 
 # Model selection
@@ -47,10 +49,10 @@ Use the cheapest model that is smart enough for the task. Use only these:
 
 | Worker | Model (harness) | Effort | Role | Smarts | Cost |
 |---|---|---|---|---|---|
-| Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | Architect: design, grilling, orchestration and review. Top-level only, never a delegate. | highest | high |
+| Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | Architect: design, grilling, orchestration and review. Also a delegate for the hardest open or vague tasks: one Opus child at a time, launched only by the top-level orchestrator. | highest | high |
 | Sol 6.1 | `gpt-6.1-sol` (Codex) | `high` | Foundational implementation and hard reasoning | highest | high |
-| Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research, scoped tasks and reviews | high | low |
-| GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Fallback and second reviewer | high | low |
+| Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research and scoped implementation | high | low |
+| GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Default reviewer and fallback | high | low |
 
 # Fleet
 
@@ -60,6 +62,6 @@ Use the cheapest model that is smart enough for the task. Use only these:
 | `msi-dux` (PC) | 16 cores, 30 GiB RAM, 2 GPUs | All VM work and long-running jobs, up to three 8 GiB VMs | T3 environment `msi-dux`, or `tailscale ssh abdulrahman@msi-dux` |
 
 * Run builds, VMs and other long-running work on `msi-dux` (it stays up when the laptop lid closes); keep the laptop for work specific to it, such as dotfiles tests or its own services. The laptop sets `AGENT_HEAVY_JOBS=deny`, and repos' heavy make targets (arch-niri-dux's builds and VMs) refuse to run while it's set. Check free RAM before starting a VM.
-* Run commands there with `tailscale ssh abdulrahman@msi-dux "bash -lc '<command>'"`. Its login shell is fish, and `bash -l` gives the login PATH (`~/.local/bin`, Nix). For long jobs, run agent-wait on the remote side: start with `agent-wait --start --log <log> -- <command>`, then repeat `agent-wait --pid <pid> --log <log>` until it stops exiting 124.
+* Run commands there through stdin, which needs no extra quoting: `tailscale ssh abdulrahman@msi-dux 'bash -ls' <<'EOF'`, then the commands, then `EOF`. Its login shell is fish, and `bash -l` gives the login PATH (`~/.local/bin`, Nix). For long jobs, run agent-wait on the remote side: start with `agent-wait --start --log <log> -- <command>`, then repeat `agent-wait --pid <pid> --log <log>` until it stops exiting 124.
 * `msi-dux` dual-boots Windows. Never touch its physical disks or boot configuration.
 * `msi-dux` runs T3 as a headless background service. Its desktop app can't start while the service runs, so open its threads from the laptop.
