@@ -37,11 +37,24 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 
 Native directories remain real, so separately installed skills coexist.
 
-`~/.claude/settings.json` compacts at 400k instead of the ~967k default on 1M models (Lydia Hallie,
-https://x.com/lydiahallie/status/2108624109538291901): every turn re-reads the whole context, so a cap keeps
-turns and post-idle cache rewrites bounded. `promptCacheTtl: "1h"` keeps the 1-hour cache even on usage credits,
-where the default drops to 5 minutes. Claude Code writes `/autocompact` and `/config` changes through the link
-into this repo, so they show up as a diff here.
+## Context and cache settings
+
+Every request re-reads the whole context, so each harness gets a bounded context. Evidence and numbers are in
+[PR #13](https://github.com/abdulrahman-aj/agent-config/pull/13).
+
+- **Claude Code** (`~/.claude/settings.json`): `autoCompactWindow: 400000` compacts at about 367k (the window
+  minus a ~33k reserve) instead of the ~967k default on 1M models. `promptCacheTtl: "1h"` pins the 1-hour
+  cache, which otherwise drops to 5 minutes on usage credits. Leave `subagentPromptCacheTtl` unset: T3 applies
+  it to delegate children, and a 5-minute cache would expire during every build wait. Claude Code writes
+  `/autocompact` and `/config` changes through the link into this repo, so they show up as a diff here.
+- **Codex**: no file. `gpt-6.1-sol` already runs a 500k window and compacts at 450k, and Codex has no
+  cache-lifetime setting. To compact earlier, set `model_auto_compact_token_limit` in `~/.codex/config.toml`.
+- **OpenCode** (`~/.config/opencode/opencode.jsonc`): `compaction.buffer: "60%"` compacts at 40% of the
+  window, about 400k on the 1M Muse and GLM models. The default waits until 85%.
+
+A turn inside Claude's 1-hour cache keeps it warm, so orchestrators heartbeat at 55 minutes while work is in
+flight (see the `orchestrate` skill). Codex and OpenCode caches are short-lived, best effort and cheap to
+miss, so they get no keep-alive.
 
 Restart the harness or refresh the skill catalog to see edited instructions or
 newly deployed skills. Changes to `environment.d` apply after the next login.

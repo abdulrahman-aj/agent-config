@@ -1,5 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "username": "Abdulrahman",
-  "update": "disable"
+  "update": "disable",
+  // Room kept free before auto-compaction: compacts at 40% of the window (~400k on 1M models).
+  // The default 15% lets Muse and GLM grow to ~850k.
+  "compaction": {
+    "buffer": "60%"
+  }
 }
