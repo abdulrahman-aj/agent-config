@@ -31,10 +31,17 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 | `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
+| `~/.claude/settings.json` | `home/.claude/settings.json` |
 | `~/.local/bin/agent-wait` | `home/.local/bin/agent-wait` |
 | `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
 
 Native directories remain real, so separately installed skills coexist.
+
+`~/.claude/settings.json` compacts at 400k instead of the ~967k default on 1M models (Lydia Hallie,
+https://x.com/lydiahallie/status/2108624109538291901): every turn re-reads the whole context, so a cap keeps
+turns and post-idle cache rewrites bounded. `promptCacheTtl: "1h"` keeps the 1-hour cache even on usage credits,
+where the default drops to 5 minutes. Claude Code writes `/autocompact` and `/config` changes through the link
+into this repo, so they show up as a diff here.
 
 Restart the harness or refresh the skill catalog to see edited instructions or
 newly deployed skills. Changes to `environment.d` apply after the next login.
