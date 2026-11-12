@@ -1,0 +1,18 @@
+# Managed by agent-config (hosts/zenbook-dux/): launch T3 with the heavy-jobs
+# guard. T3 spawns every harness through `systemd-run --user --scope`, which
+# forwards the caller's environment, so each T3-launched agent inherits
+# AGENT_HEAVY_JOBS=deny while human terminals (plain session, no
+# environment.d) never see it. Applies to app-launcher starts; raw `t3code`
+# from a terminal and `t3code://` URL-handler launches (T3's self-written
+# com.t3tools.T3Code.desktop) bypass it. Re-sync Exec with the packaged
+# /usr/share/applications/t3code.desktop if a T3 update changes it.
+[Desktop Entry]
+Name=T3 Code
+Exec=env AGENT_HEAVY_JOBS=deny t3code %U
+Terminal=false
+Type=Application
+Icon=t3code
+StartupWMClass=t3code
+Comment=T3 Code is an open-source desktop app for coding agents. Work with your existing agent subscriptions, review code changes, and run commands in your projects. Connect from desktop, web, or mobile to continue working remotely.
+MimeType=x-scheme-handler/t3code;x-scheme-handler/t3code-dev;
+Categories=Development;

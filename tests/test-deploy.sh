@@ -35,7 +35,7 @@ ln -s "$scratch/mid-instructions" "$target/.codex/AGENTS.md"
 deploy install
 deploy install
 record_is || fail "repo record wrong"
-[[ "$(realpath "$target/.config/environment.d/60-agent-heavy-jobs.conf")" == "$checkout/hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf" ]] \
+[[ "$(realpath "$target/.local/share/applications/t3code.desktop")" == "$checkout/hosts/zenbook-dux/.local/share/applications/t3code.desktop" ]] \
     || fail "host file is not linked"
 deploy check
 while IFS= read -r -d '' config; do
@@ -171,6 +171,6 @@ if make -s -C "$checkout" check TARGET="$scratch/nonexistent" \
 fi
 make -s -C "$checkout" uninstall TARGET="$scratch/nonexistent" >/dev/null
 [[ ! -e "$scratch/nonexistent" ]] || fail "check or uninstall created the missing target"
-[[ ! -L "$target/.config/environment.d/60-agent-heavy-jobs.conf" ]] || fail "host link remains"
+[[ ! -L "$target/.local/share/applications/t3code.desktop" ]] || fail "host link remains"
 
 echo "Agent Stow deployment test passed"

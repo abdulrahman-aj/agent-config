@@ -44,7 +44,7 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 record="$(record_path "$target")"
 # Everywhere a managed link can live, stowed ones included: stow refuses to
 # replace links into a moved or re-cloned checkout, so the sweep must find them.
-roots=(.agents .claude .codex .config/opencode .config/environment.d .local/bin .t3)
+roots=(.agents .claude .codex .config/opencode .config/environment.d .local/bin .local/share/applications .t3)
 acted=0
 # TARGET paths slated for removal in --check mode (already gone on install).
 # The conflict check must evaluate post-clean state, not pre-clean.

@@ -33,7 +33,7 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
 | `~/.claude/settings.json` | `home/.claude/settings.json` |
 | `~/.local/bin/agent-wait` | `home/.local/bin/agent-wait` |
-| `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
+| `~/.local/share/applications/t3code.desktop` (laptop) | `hosts/zenbook-dux/.local/share/applications/t3code.desktop` |
 
 Native directories remain real, so separately installed skills coexist.
 
@@ -45,6 +45,8 @@ a change applies when T3 next starts the Claude process. Evidence:
 [PR #13](https://github.com/abdulrahman-aj/agent-config/pull/13).
 
 Restart the harness or refresh the skill catalog to see edited instructions or
-newly deployed skills. Changes to `environment.d` apply after the next login.
+newly deployed skills. The T3 launcher override applies the next time T3 is
+started from the app launcher; one re-login clears the old session-wide
+variable from terminals.
 
 Run `make help` for targets.
