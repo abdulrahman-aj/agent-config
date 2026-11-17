@@ -145,9 +145,8 @@
   // Only long blocks can break, so only they get the mark. Each of their lines carries a
   // label, and a line whose page differs from the previous line's page gets the mark.
   // Labels rather than a state updated line by line: such a chain needed more layout
-  // passes than Typst allows, and the document did not converge. The mark tracks where
-  // each line's paragraph starts, so a break inside one wrapped line would put it above
-  // the next line instead; the keep rules make that break rare.
+  // passes than Typst allows, and the document did not converge. A wrapped line never
+  // breaks across pages: half a statement on each page can't be read or copied.
   if long { code-blocks.step() }
   context {
     let n = code-blocks.get().first()
@@ -160,7 +159,7 @@
           text(hyphenate: false, caps([continued], size: 5.6pt, fill: faint, weight: 600))))
       }
     }
-    let line(i, (row, keep)) = block(spacing: 0.56em, sticky: keep, par({
+    let line(i, (row, keep)) = block(spacing: 0.56em, sticky: keep, breakable: false, par({
       if long {
         if i > 0 { mark(i) }
         [#metadata(none)#tag(i)]
