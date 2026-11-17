@@ -84,7 +84,8 @@ python3 <this skill>/build.py path/to/book.typ   # writes path/to/book.pdf
 The build fetches Typst, fonts and poppler from nixpkgs (no system installs), copies the
 template next to `book.typ`, nudges chapter spacing so no chapter ends on a near-empty
 page, and runs `check.py`. It fails on unresolved answers, pointers that land on the
-wrong page, and text outside the margins. It reports short pages with a likely reason;
+wrong page, and text outside the margins. It cannot see inside diagrams; the visual pass
+below covers those. It reports short pages with a likely reason;
 treat every "unexpected" one as a layout bug to fix.
 
 ## 5. Look at it

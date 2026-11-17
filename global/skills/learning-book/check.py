@@ -122,6 +122,7 @@ def run(pdf, typst):
         print(f'   page {page}: {fill:.0%} full, {reason}')
     if not short:
         print('   none')
+    # texts is 0-based, so texts[page] is the page after `page`: the chapter continues there.
     holes = [page for page, fill in enumerate(fills, 1)
              if 0.5 <= fill < 0.88 and page not in chapter_ends and page < len(fills)
              and texts[page].strip()]

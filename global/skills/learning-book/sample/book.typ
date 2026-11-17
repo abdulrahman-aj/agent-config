@@ -19,6 +19,7 @@ book and every object id you see will match the printed ones:
 $ export GIT_AUTHOR_NAME=Ada GIT_AUTHOR_EMAIL=ada@example.com \
   GIT_COMMITTER_NAME=Ada GIT_COMMITTER_EMAIL=ada@example.com \
   GIT_AUTHOR_DATE=2026-11-17T09:00:00Z GIT_COMMITTER_DATE=2026-11-17T09:00:00Z
+$ mkdir scratch && cd scratch && git init -q -b main
 ```
 ]
 
@@ -43,14 +44,25 @@ $ git hash-object greeting.txt
 >> ce013625030ba8dba906f756967f9e9ca394464a
 ```
 
+The header is the word `blob`, the size in bytes and a NUL. Python's standard library
+gives the same id, which is the whole trick:
+
+```python
+import hashlib
+
+data = b"hello\n"
+header = b"blob %d\0" % len(data)
+print(hashlib.sha1(header + data).hexdigest())
+```
+
 == Trees and commits
 
 A _tree_ maps names to blobs and to other trees; it is a directory listing. A _commit_
 points at one tree, the snapshot, and at its parent commits, plus author and message. The
 chain runs one way: a commit knows its parent, a parent never knows its children.
 
-#diagram("objects.svg")[A branch is a file holding a commit id. The commit names a tree, the
-tree names blobs, and each commit names its parent.]
+#diagram("objects.svg")[The repository after the first commit. A branch is a file holding a
+commit id; the commit names a tree, and the tree names blobs.]
 
 ```terminal
 $ git add greeting.txt && git commit -qm 'Add greeting'
@@ -66,6 +78,14 @@ $ git cat-file -p HEAD^{tree}
 
 The blob id in the tree is the one `hash-object` printed before the commit existed. Git did
 not copy the file; it computed the same name for the same bytes.
+
+#table(columns: (auto, 1fr, 1fr),
+  [Object], [Holds], [Changes when],
+  [blob], [file bytes], [the bytes change],
+  [tree], [names, modes, and the ids of blobs and trees], [any entry below it changes],
+  [commit], [a tree id, parent ids, author, message], [its tree, parents, message or
+    timestamps change],
+)
 
 #exercise("Watch one edit ripple upward", where: "Your machine")[
 In your scratch repository, append a line to `greeting.txt`, commit, and print the new
@@ -108,6 +128,7 @@ Every time `HEAD` moves, Git appends the old and new ids to the _reflog_. Here a
 commit is made and then thrown away with `reset --hard`:
 
 ```terminal
+$ echo 'hi' >> greeting.txt
 $ git commit -qam 'Extend greeting'
 $ git reset --hard HEAD~1
 HEAD is now at 36b93bb Add greeting
@@ -137,6 +158,9 @@ Two separate steps had to happen: the reflog entry expired, then `gc` deleted th
 unreachable object. On a normal repository the first step waits 30 days for unreachable
 entries (`gc.reflogExpireUnreachable`).
 ]
+
+#aside[Each branch has its own reflog too, under `.git/logs/refs/heads/`. Both are local:
+a fresh clone starts with empty reflogs, and pushing never sends them.]
 
 #case("The force-push on Friday", meta: [Reproduced in a scratch repository])[
 On Friday afternoon a teammate ran `git reset --hard HEAD~3` on `main`, then

@@ -9,6 +9,7 @@
 //   #exercise(title, where: "Laptop", disposable: false)[body]  read + try
 //   #case(title, meta: none)[story][ask][verdict]              a real case the reader judges
 //   #question[prompt][answer]                                   answer goes to the chapter end
+//                                                               (numbered chapters only)
 //   #aside[body]                                                a side note
 //   #diagram(path, caption)                                     an SVG figure
 //   #glossary(([term], [definition], <chapter-label>), ...)
@@ -131,12 +132,12 @@
   for line in source.split("\n") {
     if continued or line.starts-with("$ ") {
       let (prompt, cmd) = if continued { ("", line) } else { ("$ ", line.slice(2)) }
-      rows.push(styled(faint, prompt) + styled(ink, weight: 600, cmd))
+      rows.push((styled(faint, prompt) + styled(ink, weight: 600, cmd), true))
       continued = line.ends-with("\\")
     } else if line.starts-with(">> ") {
-      rows.push(styled(blue, weight: 600, line.slice(3)))
+      rows.push((styled(blue, weight: 600, line.slice(3)), false))
     } else {
-      rows.push(styled(rgb("#56616f"), line))
+      rows.push((styled(rgb("#56616f"), line), false))
     }
   }
   rows
@@ -144,7 +145,8 @@
 
 // Each source line is its own paragraph, so a wrapped line hangs under its first
 // character. Long blocks may break across pages but never leave fewer than three lines
-// on either side, and the part on the new page carries a small "continued" mark.
+// on either side or a command apart from its first output line, and the part on the new
+// page carries a small "continued" mark. `rows` holds (line, keep-with-next) pairs.
 #let code-block(rows) = {
   let mark = context {
     let prev = code-page.get()
@@ -154,11 +156,11 @@
         text(hyphenate: false, caps([continued], size: 5.6pt, fill: faint, weight: 600))))
     }
   }
-  let line(row) = par({
+  let line(((row, keep))) = block(spacing: 0.56em, sticky: keep, par({
     mark
     context code-page.update(here().page())
     if row == [] or row == none { raw("\u{200b}") } else { row }
-  })
+  }))
   let long = rows.len() >= 7
   code-page.update(none)
   context block(width: 100%, above: block-gap, below: block-gap, breakable: long,
@@ -198,7 +200,7 @@
   set block(spacing: block-gap)
 
   show raw.where(block: true): it => code-block(
-    if it.lang == "terminal" { terminal-rows(it.text) } else { it.lines.map(l => l.body) })
+    if it.lang == "terminal" { terminal-rows(it.text) } else { it.lines.map(l => (l.body, false)) })
 
   show heading: set text(font: sans, fill: ink, hyphenate: false)
   show heading: set par(justify: false)
@@ -412,10 +414,12 @@
 
 // ---------------------------------------------------------------- questions and cases
 
-// Registers an answer for the chapter end and returns its number, e.g. "2.3".
+// Registers an answer for the chapter end and numbers it, e.g. "2.3". Questions belong in
+// numbered chapters: the number is the chapter's, so unnumbered ones would collide.
 #let register(prompt, answer, case: false, body) = context {
-  question-count.step()
+  // This context reads the counter before the step below takes effect, hence the + 1.
   let n = str(counter(heading).get().first()) + "." + str(question-count.get().first() + 1)
+  question-count.step()
   answers.update(list => list + ((n: n, prompt: prompt, answer: answer, case: case),))
   [#metadata((n: n, case: case, page: here().page(), folio: folio-at(here()),
     pointer: folio-of(label("ans-" + n))))
