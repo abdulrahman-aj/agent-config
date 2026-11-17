@@ -228,8 +228,9 @@
     line(length: 100%, stroke: 1pt + ink)
   })
 
-  // Tables: rules instead of a grid, no hyphenation in cells, and tables of three rows or
-  // fewer kept whole.
+  // Tables: rules instead of a grid, no hyphenation in cells. Tables of twelve rows or fewer
+  // stay whole, so a page break can never strand the header row; longer tables may break
+  // and should mark their first row with table.header so it repeats.
   set table(inset: (x: 5pt, y: 4.6pt), align: left + top, stroke: (x, y) => (
     top: if y == 0 { 0.9pt + ink } else if y == 1 { 0.6pt + ink } else { 0.35pt + rule }))
   show table.cell.where(y: 0): set text(font: sans, weight: 700, size: 8.6pt)
@@ -238,7 +239,7 @@
     set text(size: 8.8pt, hyphenate: false)
     set par(justify: false, leading: 0.5em)
     show raw: set text(size: 7.8pt)
-    block(above: block-gap, below: block-gap, breakable: it.children.len() >= 4 * cols,
+    block(above: block-gap, below: block-gap, breakable: it.children.len() > 12 * cols,
       stroke: (bottom: 0.9pt + ink), it)
   }
 
@@ -328,7 +329,7 @@
   answers.update(())
   // The first numbered chapter starts the arabic page numbers at 1.
   context if numbered and counter(heading).get().first() == 0 { counter(page).update(1) }
-  [#metadata((numbered: numbered)) <chapter-open>]
+  context [#metadata((numbered: numbered, page: here().page())) <chapter-open>]
   let h = heading(level: 1, numbering: if numbered { "1" } else { none }, title)
   if label != none [#h#label] else { h }
 

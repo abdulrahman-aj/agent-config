@@ -108,6 +108,8 @@ def run(pdf, typst):
     # Short pages, with the reason each is expected.
     fills = page_fills(boxes, geometry)
     chapter_ends = {p['page'] for p in probes}
+    # The title and contents end where they end; the contents may run to several pages.
+    front = min(c['page'] for c in chapters) - 1
     print('pages less than half full:')
     short = 0
     for index, fill in enumerate(fills):
@@ -115,7 +117,7 @@ def run(pdf, typst):
         if fill >= 0.5:
             continue
         short += 1
-        if page <= 2:
+        if page <= front:
             reason = 'title or contents'
         elif page in chapter_ends:
             reason = "a chapter's last page"
@@ -125,9 +127,8 @@ def run(pdf, typst):
     if not short:
         print('   none')
     # texts is 0-based, so texts[page] is the page after `page`: the chapter continues there.
-    # Pages 1 and 2 are the title and contents, which end where they end.
     holes = [page for page, fill in enumerate(fills, 1)
-             if page > 2 and 0.5 <= fill < 0.88 and page not in chapter_ends
+             if page > front and 0.5 <= fill < 0.88 and page not in chapter_ends
              and page < len(fills)
              and texts[page].strip()]
     print(f'pages ending under 88% full while the chapter continues: {holes or "none"}')
