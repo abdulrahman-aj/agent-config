@@ -469,19 +469,21 @@
 
 // ---------------------------------------------------------------- glossary
 
-// Term, definition, and the number of the chapter that introduces it, linked.
+// Term, definition, and the number of the chapter that introduces it, linked. A term
+// from an unnumbered chapter, such as an introduction, links with its page instead.
 // Its row gap follows the chapter's fit level, since the paragraph gaps the level adjusts
 // barely occur here.
 #let glossary(..entries) = block(above: 2 * unit, context {
   set text(size: 9.2pt)
   set par(justify: false, leading: 0.55em)
   show raw: set text(size: 8pt)
-  grid(columns: (30mm, 1fr, 6mm), column-gutter: 10pt,
+  grid(columns: (30mm, 1fr, 7mm), column-gutter: 9pt,
     row-gutter: 1.5 * unit + fit-level.get() * 0.6pt,
     ..entries.pos().map(((term, definition, ch)) => (
       text(font: sans, weight: 700, size: 9.4pt, term),
       definition,
       align(right, link(ch, text(font: sans, size: 8.4pt, weight: 600, fill: blue,
-        context str(counter(heading).at(locate(ch)).first())))),
+        context if query(ch).first().numbering == none { "p." + folio-of(ch) }
+          else { str(counter(heading).at(locate(ch)).first()) }))),
     )).flatten())
 })
