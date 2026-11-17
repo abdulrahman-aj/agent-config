@@ -4,7 +4,7 @@
 //
 // Interface (everything else in this file is styling and may change):
 //   #show: book.with(title:, subtitle:, reader:, snapshot:)   title page and contents
-//   #chapter(title, numbered: true, label: none)[body]           opener on a right-hand page
+//   #chapter(title, numbered: true, label: none)[body]           opener on a new page        
 //   #takeaways[- list]                                          "After this chapter you can"
 //   #exercise(title, where: "Laptop", disposable: false)[body]  read + try
 //   #case(title, meta: none)[story][ask][verdict]              a real case the reader judges
@@ -34,9 +34,10 @@
 #let page-height = 235mm
 #let margins = (inside: 21mm, outside: 23mm, top: 21mm, bottom: 22mm)
 
-// One vertical unit, half a body line. Paragraph gaps are one unit beyond the leading;
-// blocks (code, tables, boxes) sit two units away from text.
-#let unit = 6.5pt
+// One vertical unit, a little under half a body line. Paragraph gaps are one unit beyond
+// the leading; blocks (code, tables, boxes) sit two units away from text. Kept tight: the
+// books are read as PDFs, and airy spacing reads as padding there.
+#let unit = 5.5pt
 #let leading = 0.62em
 #let par-gap = leading + unit
 #let block-gap = 2 * unit
@@ -69,21 +70,13 @@
 
 // ---------------------------------------------------------------- page furniture
 
-// Pages without a running head: chapter openers, title and contents pages, and the pages
-// left blank before an opener.
+// Pages without a running head: chapter openers, and the title and contents pages.
 #let is-opener(p) = query(<chapter-open>).any(m => m.location().page() == p)
 #let is-quiet(p) = query(<quiet>).any(m => m.location().page() == p)
-#let is-blank(p) = {
-  let ends = query(<chapter-end>).filter(m => m.location().page() < p)
-  if ends.len() == 0 { return false }
-  let last-end = ends.last().location().page()
-  let opens = query(<chapter-open>).filter(m => m.location().page() > last-end)
-  opens.len() > 0 and opens.first().location().page() > p
-}
 
 #let running-head = context {
   let p = here().page()
-  if is-opener(p) or is-blank(p) or is-quiet(p) { return }
+  if is-opener(p) or is-quiet(p) { return }
   let chapters = query(heading.where(level: 1)).filter(h => h.location().page() <= p)
   if chapters.len() == 0 { return }
   let chapter = chapters.last()
@@ -120,7 +113,7 @@
 
 // The fill a code block uses depends on whether it sits inside a tinted exercise box.
 #let in-box = state("in-box", false)
-#let code-page = state("code-page", none)
+#let code-blocks = counter("code-block")
 
 // A terminal transcript: the prompt in grey, the command in full ink, output in a lighter
 // grey, ">> " lines in blue. A command ending in "\" continues on the next line.
@@ -148,36 +141,47 @@
 // on either side or a command apart from its first output line, and the part on the new
 // page carries a small "continued" mark. `rows` holds (line, keep-with-next) pairs.
 #let code-block(rows) = {
-  let mark = context {
-    let prev = code-page.get()
-    if prev != none and here().page() != prev {
-      // A paragraph cannot hold a placed element directly, but a zero-size box can.
-      box(width: 0pt, height: 0pt, place(top + left, dy: -12.8pt,
-        text(hyphenate: false, caps([continued], size: 5.6pt, fill: faint, weight: 600))))
-    }
-  }
-  let line(((row, keep))) = block(spacing: 0.56em, sticky: keep, par({
-    mark
-    context code-page.update(here().page())
-    if row == [] or row == none { raw("\u{200b}") } else { row }
-  }))
   let long = rows.len() >= 7
-  code-page.update(none)
-  context block(width: 100%, above: block-gap, below: block-gap, breakable: long,
-    fill: if in-box.get() { none } else { code-tint },
-    inset: (x: 8pt, y: 8pt), stroke: (left: 1.6pt + rule), {
-      set par(justify: false, leading: 0.56em, spacing: 0.56em, hanging-indent: 2.5em,
-        linebreaks: "simple", first-line-indent: 0pt)
-      set text(hyphenate: false)
-      show raw: set text(size: 7.5pt)
-      if long {
-        block(breakable: false, spacing: 0.56em, rows.slice(0, 3).map(line).join())
-        rows.slice(3, -3).map(line).join()
-        block(breakable: false, spacing: 0.56em, rows.slice(-3).map(line).join())
-      } else {
-        rows.map(line).join()
+  // Only long blocks can break, so only they get the mark. Each of their lines carries a
+  // label, and a line whose page differs from the previous line's page gets the mark.
+  // Labels rather than a state updated line by line: such a chain needed more layout
+  // passes than Typst allows, and the document did not converge.
+  if long { code-blocks.step() }
+  context {
+    let n = code-blocks.get().first()
+    let tag(i) = label("code-" + str(n) + "-" + str(i))
+    let mark(i) = context {
+      let prev = query(tag(i - 1))
+      if prev.len() > 0 and prev.first().location().page() != here().page() {
+        // A paragraph cannot hold a placed element directly, but a zero-size box can.
+        box(width: 0pt, height: 0pt, place(top + left, dy: -12.8pt,
+          text(hyphenate: false, caps([continued], size: 5.6pt, fill: faint, weight: 600))))
       }
-    })
+    }
+    let line(i, (row, keep)) = block(spacing: 0.56em, sticky: keep, par({
+      if long {
+        if i > 0 { mark(i) }
+        [#metadata(none)#tag(i)]
+      }
+      if row == [] or row == none { raw("\u{200b}") } else { row }
+    }))
+    let lines = rows.enumerate().map(((i, row)) => line(i, row))
+    block(width: 100%, above: block-gap, below: block-gap, breakable: long,
+      fill: if in-box.get() { none } else { code-tint },
+      inset: (x: 8pt, y: 8pt), stroke: (left: 1.6pt + rule), {
+        set par(justify: false, leading: 0.56em, spacing: 0.56em, hanging-indent: 2.5em,
+          linebreaks: "simple", first-line-indent: 0pt)
+        set text(hyphenate: false)
+        show raw: set text(size: 7.5pt)
+        if long {
+          block(breakable: false, spacing: 0.56em, lines.slice(0, 3).join())
+          lines.slice(3, -3).join()
+          block(breakable: false, spacing: 0.56em, lines.slice(-3).join())
+        } else {
+          lines.join()
+        }
+      })
+  }
 }
 
 // ---------------------------------------------------------------- document
@@ -274,7 +278,7 @@
   line(length: 22mm, stroke: 3pt + blue)
   v(8mm)
   par(justify: false, leading: 0.4em,
-    text(font: sans, size: 36pt, weight: 700, tracking: -0.015em, title))
+    text(font: sans, size: 36pt, weight: 700, tracking: -0.015em, hyphenate: false, title))
   if subtitle != none {
     v(6mm)
     block(width: 82%, par(justify: false, leading: 0.5em,
@@ -292,14 +296,14 @@
       text(font: sans, size: 8.2pt, fill: soft, snapshot)))
   }
 
-  // Contents, on the next right-hand page.
-  pagebreak(to: "odd")
+  // Contents, on the next page. No right-hand openers: the books are read on screen,
+  // where the blank pages they force are just gaps.
+  pagebreak()
   [#metadata(none) <quiet>]
   heading(level: 1, numbering: none, outlined: false, bookmarked: true)[Contents]
   outline(title: none, target: heading.where(level: 1).or(heading.where(level: 2)), depth: 2)
 
   body
-  [#metadata("end") <chapter-end>]
 }
 
 // ---------------------------------------------------------------- chapters
@@ -316,8 +320,7 @@
 #let question-count = counter("question")
 
 #let chapter(title, numbered: true, label: none, body) = {
-  [#metadata("end") <chapter-end>]
-  pagebreak(to: "odd", weak: true)
+  pagebreak(weak: true)
   chapter-index.step()
   question-count.update(0)
   answers.update(())
@@ -344,7 +347,12 @@
         heading(level: 2, outlined: false, bookmarked: true)[Answers]
         for a in items {
           block(above: 2.2 * unit, below: 0pt, {
-            [#metadata((n: a.n, page: here().page(), folio: folio-at(here()))) <answer-mark>]
+            // Locate the answer by its label: here() would resolve to the enclosing
+            // context, i.e. where the Answers section starts, not where this answer is.
+            // query, not locate: the label doesn't exist yet on the first layout pass.
+            let found = query(std.label("ans-" + a.n))
+            [#metadata((n: a.n, page: if found.len() > 0 { found.first().location().page() },
+              folio: folio-of(std.label("ans-" + a.n)))) <answer-mark>]
             [#metadata(none)#std.label("ans-" + a.n)]
             set text(size: 9.3pt + level * 0.1pt)
             show raw: set text(size: 8pt)

@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 
 TOLERANCE = 1.0  # points
 # Typst hangs punctuation and hyphens slightly into the margin on purpose.
-HANGING = ',.;:-\xad)’”'
+HANGING = ',.;:-\xad–—)’”'
 
 
 def page_texts(pdf, poppler):
@@ -111,9 +111,7 @@ def run(pdf, typst):
         if fill >= 0.5:
             continue
         short += 1
-        if not texts[index].strip():
-            reason = 'blank, before a right-hand opener'
-        elif page <= 3:
+        if page <= 2:
             reason = 'title or contents'
         elif page in chapter_ends:
             reason = "a chapter's last page"
