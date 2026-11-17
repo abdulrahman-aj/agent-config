@@ -30,9 +30,13 @@
 #let ochre-tint = rgb("#fbf6ea")
 #let code-tint = rgb("#f2f4f7")
 
-#let page-width = 178mm
-#let page-height = 235mm
-#let margins = (inside: 21mm, outside: 23mm, top: 21mm, bottom: 22mm)
+// Sized for reading on screen at fit-to-width: margins only need to clear the running head
+// and folio, so the page wraps the text block closely and the type renders larger. The
+// 134 mm measure keeps body lines near 80 characters; widen it and code starts wrapping.
+// 13 mm still prints on loose sheets, but is too tight for a perfect-bound spine.
+#let page-width = 160mm
+#let page-height = 212mm
+#let margins = (inside: 13mm, outside: 13mm, top: 14mm, bottom: 14mm)
 
 // One vertical unit, a little under half a body line. Paragraph gaps are one unit beyond
 // the leading; blocks (code, tables, boxes) sit two units away from text. Kept tight: the
@@ -466,11 +470,14 @@
 // ---------------------------------------------------------------- glossary
 
 // Term, definition, and the number of the chapter that introduces it, linked.
-#let glossary(..entries) = block(above: 2 * unit, {
+// Its row gap follows the chapter's fit level, since the paragraph gaps the level adjusts
+// barely occur here.
+#let glossary(..entries) = block(above: 2 * unit, context {
   set text(size: 9.2pt)
   set par(justify: false, leading: 0.55em)
   show raw: set text(size: 8pt)
-  grid(columns: (30mm, 1fr, 6mm), column-gutter: 10pt, row-gutter: 1.5 * unit,
+  grid(columns: (30mm, 1fr, 6mm), column-gutter: 10pt,
+    row-gutter: 1.5 * unit + fit-level.get() * 0.6pt,
     ..entries.pos().map(((term, definition, ch)) => (
       text(font: sans, weight: 700, size: 9.4pt, term),
       definition,
