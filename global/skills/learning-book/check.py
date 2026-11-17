@@ -41,6 +41,10 @@ def check_answers(questions, answers, texts):
         if a is None:
             problems.append(f'question {n} has no answer')
             continue
+        # An unconverged layout can leave an answer unplaced; report it instead of crashing.
+        if a['page'] is None:
+            problems.append(f'answer {n} never resolved to a page')
+            continue
         # Compare against the printed text, not just the metadata, so a layout that did not
         # converge shows up.
         if f'Answer {n}, page {a["folio"]}' not in texts[q['page'] - 1]:
@@ -121,8 +125,10 @@ def run(pdf, typst):
     if not short:
         print('   none')
     # texts is 0-based, so texts[page] is the page after `page`: the chapter continues there.
+    # Pages 1 and 2 are the title and contents, which end where they end.
     holes = [page for page, fill in enumerate(fills, 1)
-             if 0.5 <= fill < 0.88 and page not in chapter_ends and page < len(fills)
+             if page > 2 and 0.5 <= fill < 0.88 and page not in chapter_ends
+             and page < len(fills)
              and texts[page].strip()]
     print(f'pages ending under 88% full while the chapter continues: {holes or "none"}')
 

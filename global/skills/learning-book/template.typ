@@ -4,7 +4,7 @@
 //
 // Interface (everything else in this file is styling and may change):
 //   #show: book.with(title:, subtitle:, reader:, snapshot:)   title page and contents
-//   #chapter(title, numbered: true, label: none)[body]           opener on a new page        
+//   #chapter(title, numbered: true, label: none)[body]           opener on a new page
 //   #takeaways[- list]                                          "After this chapter you can"
 //   #exercise(title, where: "Laptop", disposable: false)[body]  read + try
 //   #case(title, meta: none)[story][ask][verdict]              a real case the reader judges
@@ -145,7 +145,9 @@
   // Only long blocks can break, so only they get the mark. Each of their lines carries a
   // label, and a line whose page differs from the previous line's page gets the mark.
   // Labels rather than a state updated line by line: such a chain needed more layout
-  // passes than Typst allows, and the document did not converge.
+  // passes than Typst allows, and the document did not converge. The mark tracks where
+  // each line's paragraph starts, so a break inside one wrapped line would put it above
+  // the next line instead; the keep rules make that break rare.
   if long { code-blocks.step() }
   context {
     let n = code-blocks.get().first()
@@ -351,8 +353,9 @@
             // context, i.e. where the Answers section starts, not where this answer is.
             // query, not locate: the label doesn't exist yet on the first layout pass.
             let found = query(std.label("ans-" + a.n))
-            [#metadata((n: a.n, page: if found.len() > 0 { found.first().location().page() },
-              folio: folio-of(std.label("ans-" + a.n)))) <answer-mark>]
+            let loc = if found.len() > 0 { found.first().location() }
+            [#metadata((n: a.n, page: if loc != none { loc.page() },
+              folio: if loc != none { folio-at(loc) } else { "?" })) <answer-mark>]
             [#metadata(none)#std.label("ans-" + a.n)]
             set text(size: 9.3pt + level * 0.1pt)
             show raw: set text(size: 8pt)
