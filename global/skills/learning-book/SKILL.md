@@ -1,6 +1,6 @@
 ---
 name: learning-book
-description: Write a personal learning book and typeset it as a PDF. Use when someone wants long material they will study and act on, such as a book, a course, or an owner's manual.
+description: Write a personal learning book and typeset it as a PDF. Use when someone wants long material they will study and act on, such as a book, a course, or an owner's manual; not for short docs, READMEs or single pages.
 ---
 
 # Learning book
@@ -34,7 +34,10 @@ Run every command and verify claims against sources. Quote real output. Trim it 
 needed and preserve the text of the lines you quote. Describe unverified output
 without quoting it. Use primary sources for definitions and state the book's own
 implementation choices as choices. Run `unslop` over every chapter. Draw a diagram
-when it helps explain a mechanism.
+only for a real mechanism, never as decoration.
+
+Readers stop trusting a book that defines what they already know, opens chapters by
+announcing them, closes them with recaps, or asks recall questions that test trivia.
 
 ## 3. Labs
 
