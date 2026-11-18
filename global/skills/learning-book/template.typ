@@ -4,6 +4,8 @@
 //
 // Interface (everything else in this file is styling and may change):
 //   #show: book.with(title:, subtitle:, reader:, snapshot:)   title page and contents
+//   #part(title)[body]                                          part opener on its own page
+//   #group(title)                                               a label in the contents only
 //   #chapter(title, numbered: true, label: none)[body]           opener on a new page
 //   #takeaways[- list]                                          "After this chapter you can"
 //   #exercise(title, where: "Laptop", disposable: false)[body]  read + try
@@ -81,7 +83,8 @@
 #let running-head = context {
   let p = here().page()
   if is-opener(p) or is-quiet(p) { return }
-  let chapters = query(heading.where(level: 1)).filter(h => h.location().page() <= p)
+  let chapters = query(heading.where(level: 1)).filter(h => h.location().page() <= p
+    and h.supplement != [Part] and h.supplement != [Group])
   if chapters.len() == 0 { return }
   let chapter = chapters.last()
   set text(font: sans, size: 7.8pt, fill: soft)
@@ -216,7 +219,16 @@
   show heading.where(level: 2): it => block(above: if it.supplement == [Case] { 0.6 * unit } else { 3.4 * unit },
     below: 1.3 * unit, sticky: true,
     text(size: 12.5pt, weight: if it.supplement == [Case] { 700 } else { 600 }, it.body))
-  show heading.where(level: 1): it => block(width: 100%, above: 0pt, below: 4 * unit, {
+  show heading.where(level: 1): it => if it.supplement == [Group] { none } else if it.supplement == [Part] {
+    block(width: 100%, above: 0pt, below: 6 * unit, {
+      v(48mm)
+      block(below: 12pt, caps([Part #context counter("part").display()], size: 9pt))
+      block(above: 0pt, below: 0pt, par(leading: 0.3em,
+        text(size: 30pt, weight: 600, tracking: -0.015em, fill: blue, it.body)))
+      v(14pt)
+      line(length: 30mm, stroke: 2pt + blue)
+    })
+  } else { block(width: 100%, above: 0pt, below: 4 * unit, {
     v(22mm)
     if it.numbering != none {
       block(below: 10pt, caps([Chapter], size: 8pt))
@@ -229,7 +241,7 @@
       text(size: 23pt, weight: 600, tracking: -0.01em, it.body)))
     v(12pt)
     line(length: 100%, stroke: 1pt + ink)
-  })
+  }) }
 
   // Tables: rules instead of a grid, no hyphenation in cells. Tables of five rows or fewer
   // stay whole; longer ones may break between rows, never inside one, so they should mark
@@ -256,7 +268,16 @@
   show outline.entry: it => {
     let entry = it.element
     let pg = folio-at(entry.location())
-    if entry.level == 1 {
+    if entry.supplement == [Part] {
+      let n = counter("part").at(entry.location()).first()
+      block(above: 3.2 * unit, below: 0.6 * unit, sticky: true, link(entry.location(),
+        grid(columns: (1fr, auto), column-gutter: 6pt,
+          text(font: sans, size: 11.5pt, weight: 700, fill: blue, [Part #n#h(0.6em)#entry.body]),
+          text(font: sans, size: 10.5pt, weight: 600, pg))))
+    } else if entry.supplement == [Group] {
+      block(above: 2.2 * unit, below: 0pt, sticky: true,
+        grid(columns: (9mm, 1fr), [], caps(entry.body, size: 7.4pt)))
+    } else if entry.level == 1 {
       let num = if entry.numbering != none { counter(heading).at(entry.location()).first() }
       block(above: 1.9 * unit, below: 0.9 * unit, sticky: true, link(entry.location(),
         grid(columns: (9mm, 1fr, auto), column-gutter: (0pt, 6pt),
@@ -313,6 +334,27 @@
 
   body
 }
+
+// ---------------------------------------------------------------- parts
+
+// A part opens on its own quiet page: "Part N", its title, then an optional body such as
+// a sentence on what the part holds. It is a level-1 heading with the supplement [Part],
+// so it reaches the contents and the PDF bookmarks, while the running head and chapter
+// numbering skip it. A group labels a run of chapters in the contents and prints nothing;
+// put it just before the group's first chapter.
+#let part(title, body) = {
+  pagebreak(weak: true)
+  counter("part").step()
+  [#metadata(none) <quiet>]
+  context [#metadata((page: here().page())) <part-open>]
+  heading(level: 1, numbering: none, supplement: [Part], title)
+  set text(size: 10.5pt, hyphenate: false)
+  set par(justify: false)
+  block(width: 85%, body)
+}
+
+#let group(title) = heading(level: 1, numbering: none, supplement: [Group], bookmarked: false,
+  title)
 
 // ---------------------------------------------------------------- chapters
 

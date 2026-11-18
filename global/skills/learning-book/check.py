@@ -90,6 +90,7 @@ def run(pdf, typst):
     answers = typst.query('<answer-mark>')
     probes = typst.query('<fit>')
     chapters = typst.query('<chapter-open>')
+    part_pages = {p['page'] for p in typst.query('<part-open>')}
     diagrams = typst.query('<diagram>')
 
     numbered = sum(1 for c in chapters if c['numbered'])
@@ -121,6 +122,8 @@ def run(pdf, typst):
             reason = 'title or contents'
         elif page in chapter_ends:
             reason = "a chapter's last page"
+        elif page in part_pages:
+            reason = 'a part opener'
         else:
             reason = 'unexpected'
         print(f'   page {page}: {fill:.0%} full, {reason}')
@@ -129,6 +132,7 @@ def run(pdf, typst):
     # texts is 0-based, so texts[page] is the page after `page`: the chapter continues there.
     holes = [page for page, fill in enumerate(fills, 1)
              if page > front and 0.5 <= fill < 0.88 and page not in chapter_ends
+             and page not in part_pages
              and page < len(fills)
              and texts[page].strip()]
     print(f'pages ending under 88% full while the chapter continues: {holes or "none"}')
