@@ -1,5 +1,6 @@
 ---
 name: learning-book
+disable-model-invocation: true
 description: Write a personal learning book and typeset it as a PDF. Use when someone wants long material they will study and act on, such as a book, a course, or an owner's manual; not for short docs, READMEs or single pages.
 ---
 
