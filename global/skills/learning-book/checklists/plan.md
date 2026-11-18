@@ -24,7 +24,14 @@ wherever the old promise appears.
 - List useful topics that lose on scope in a "what this book leaves out" page, each
   with why it matters and one checked source.
 
+- Name what this book teaches that existing material on the topic doesn't, and check
+  that each chapter delivers part of it. An outline that would fit an older book on
+  the same topic has missed the point.
+
 ## Structure
+
+Scale the structure to the book's length. A short book read straight through needs no
+parts, reading paths or lookup pages.
 
 - Decide the parts, the reading paths for different goals, and the lookup pages (a
   symptom index, a catalogue), each with its own heading and contents entry.

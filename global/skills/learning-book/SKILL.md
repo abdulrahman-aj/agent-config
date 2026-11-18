@@ -24,10 +24,12 @@ Load the `grill-me` skill before planning. Find out what the reader already know
 what they should be able to do afterwards in priority order, and how many pages and
 hours they can spend including exercises. Agree which real cases to use, where the
 reader runs exercises, and what the exercises must leave untouched. Agree whether the
-book is read on screen or printed. Set the title, subtitle, and goal.
+book is read on screen or printed. Ask which models you may use, for which roles, and
+the budget. Set the title, subtitle, and goal.
 
-Write the reader, their goals, the scope and any coverage promise (such as "replaces
-book X") in a plan file. It is the one source for every brief.
+Write the reader, their goals, the scope, any coverage promise (such as "replaces
+book X"), and the allowed models and budget in a plan file. It is the one source for
+every brief.
 
 By default give each book its own private repository with `book/` for the sources and
 `lab/` for runnable exercises. Land changes through PRs. Agree where the PDF goes and
@@ -136,6 +138,11 @@ planted bugs. Record where they succeed and where they get stuck, and revise the
 teaching there.
 
 ## 7. Brief workers
+
+Run the book with the strongest model the user allows, such as Opus or Sol. A pilot
+with a cheaper orchestrator followed every rule and still missed the editorial calls:
+a generic outline, structure out of proportion to the book, a sample chapter that
+didn't deliver its own takeaway. Cheaper models do well as workers under review.
 
 You own the assembled book. Workers and reviewers propose; you check each result
 against the book, choose the fix that is best for the reader, and record the findings

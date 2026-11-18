@@ -12,7 +12,8 @@ its neighbors. Check it at two costs:
 What to check:
 
 - Each chapter picks up what the previous one taught, and its sections serve the goals
-  it opens with.
+  it opens with. A reader can do each stated goal from the chapter's text: if a goal
+  needs a config file or a setup step, the chapter shows it.
 - A running example keeps its names and schema unless the text announces the change.
 - An exercise comes after the rules it needs.
 - A case is told in one place.

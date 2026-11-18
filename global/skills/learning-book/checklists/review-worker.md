@@ -18,6 +18,7 @@ so check the work, not the report. Skip the steps that don't apply to what chang
    - hedges that weaken a claim the book can support;
    - explanations that were cut, and positions that were dropped;
    - mannered lines, recaps, and new terms for existing concepts;
+   - paragraphs that open the same way, and sections with the same shape;
    - new technical claims without a source or run, which cluster in new text.
 6. Ask whether the fix is the simplest correct one, and whether it reintroduces the bug
    in a new form. Rerun the original failure and nearby variants.

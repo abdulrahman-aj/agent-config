@@ -26,8 +26,9 @@ Check every claim in scope:
    version the book names: `<TOOLS_AND_VERSIONS>`.
 3. Each printed command and output: rerun it with `<VERIFY_CHAPTER_COMMAND>`, and
    compare printed code with the lab file it comes from.
-4. Each definition: does it match the original author, and does each example have the
-   defining property? Compare definitions and verdicts across the chapter, catalogue,
+4. Each definition, including the book's own terms ("stock", "baseline"): does it
+   match the original author or common usage, and does each example have the defining
+   property? Compare definitions and verdicts across the chapter, catalogue,
    glossary and exercises.
 5. Each recall answer and case verdict: is it right? Try the code ones.
 6. Universals ("all", "every", "never", "only"): look for a counterexample.

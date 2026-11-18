@@ -11,6 +11,9 @@ Use this before setting up or drafting the first lab, and before accepting any l
 - Give replayed commands the environment a reader has after setup, and declare the
   expected exit status of each intentional failure.
 - On a mismatch, save the command, exit status and raw output.
+- The verifier replays commands, not the instructions around them. Follow the printed
+  setup prose literally once, as a reader would, and fix any step that contradicts
+  another.
 
 ## Code quality
 
