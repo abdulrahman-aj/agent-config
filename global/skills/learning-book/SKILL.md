@@ -39,8 +39,9 @@ case and ask the reader to judge before giving the verdict. Ask recall questions
 test decisions, not trivia, and put the answers at the chapter end. Explain what you
 would choose and which trade-offs you would accept.
 
-Read the book in order after every batch of changes, for flow. Each chapter picks up
-what the previous one taught. A running example keeps its schema unless the text
+Check flow at two costs. After every batch of changes, read each changed section with
+the sections around it. After drafting a part, and before each blind read, read the
+whole book in order. Each chapter picks up what the previous one taught. A running example keeps its schema unless the text
 announces the change. An exercise comes after the rules it needs. A case is told in
 one place. No passage relies on an idea taught later. Parallel workers and fix rounds
 break flow most, because each edits one section without reading its neighbors.
@@ -145,8 +146,8 @@ and see what they find.
 
 Specify the content the reader should see rather than giving edit notes they might
 copy into the prose. Draw diagrams from real lab output and check each rendering
-against it. After parallel workers finish, build the assembled book and read it for
-flow (section 2), checking each chapter's section order and takeaways.
+against it. After parallel workers finish, build the assembled book and check each
+changed chapter's flow (section 2), section order and takeaways.
 
 Workers never edit checks, tests or tools to make their output pass; say so in the
 brief, and read any diff to those files before the rest. After every fix round, read
