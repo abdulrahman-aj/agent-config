@@ -145,12 +145,21 @@ and see what they find.
 
 ## 7. Brief workers
 
-Specify the content the reader should see rather than giving edit notes they might
-copy into the prose. Draw diagrams from real lab output and check each rendering
-against it. After parallel workers finish, build the assembled book and check each
-changed chapter's flow (section 2), section order and goals.
+Build every brief from the templates in `briefs/`. Each one carries the traps that
+workers fell into on an earlier book, so a brief written from scratch repeats them.
+Start with `briefs/common.md`, add the role's template, fill every `<PLACEHOLDER>` and
+delete only rules that cannot apply.
 
-Tell workers in the brief never to edit checks, tests or tools to make their output
-pass, and review diffs to those files before the prose. After every fix round, read
-the prose diff for new hedges ("may", "in some cases") that weaken a claim the book
-can support, and restore explanations that were cut to satisfy a finding.
+| Role | Template | When |
+|---|---|---|
+| Research a chapter's sources, cases and lab drafts | `research.md` | Before writing a chapter |
+| Write a chapter, section or entry | `writer.md` | Drafting and additions |
+| Fact-check claims against sources | `fact-check.md` | Each chapter, then each fix round's diff |
+| Check that guarantees hold | `guarantee-review.md` | Once labs exist, then each round's diff |
+| Fix review findings | `fixer.md` | After every review |
+| Draw diagrams | `diagram.md` | When a mechanism needs one |
+| Read the frozen PDF cold | `blind-read.md` | Each major revision |
+
+Give each worker files no other worker owns. When a worker reports, go through
+`briefs/review-worker.md` before accepting anything, and after parallel workers finish,
+build the assembled book and check each changed chapter's flow (section 2).
