@@ -2,8 +2,8 @@
 
     python3 build.py path/to/book.typ [--out book.pdf]
 
-Typst, the three font families and poppler come from nixpkgs, and system fonts are
-ignored, so a rebuild on another machine gives the same pages. The skill's template.typ is
+Typst, the three font families and poppler come from nixpkgs. Pin nixpkgs with
+--inputs-from to keep the tool and font versions fixed. The skill's template.typ is
 copied next to book.typ first (Typst only imports files under the book's directory).
 
 After the first compile, a chapter whose text ends in the top 30% of its last page gets
@@ -27,28 +27,50 @@ RUNT = 0.30
 LEVELS = [0, -1, -2, -3, 1, 2, 3, 4]
 
 
-# A flake whose lock pins nixpkgs, set by --inputs-from; None uses the registry's nixpkgs.
-INPUTS_FROM = None
+def validate_pin(flake):
+    lock = flake / 'flake.lock'
+    committed = subprocess.run(['git', '-C', str(flake), 'show', 'HEAD:./flake.lock'],
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    if committed.returncode or not lock.is_file() or lock.read_bytes() != committed.stdout:
+        sys.exit(f'--inputs-from {flake}: flake.lock must match the committed lock')
+
+    out = subprocess.run(['nix', 'flake', 'metadata', '--json', '--no-update-lock-file', str(flake)],
+                         stdout=subprocess.PIPE, text=True, check=True)
+    locks = json.loads(out.stdout)['locks']
+    nodes = locks['nodes']
+    root = nodes[locks['root']]
+
+    def input_node(node, name):
+        target = node.get('inputs', {}).get(name)
+        if isinstance(target, list):  # A follows path starts at the root.
+            node = root
+            for step in target:
+                node = input_node(node, step)
+            return node
+        return nodes.get(target, {})
+
+    if 'locked' not in input_node(root, 'nixpkgs'):
+        sys.exit(f'--inputs-from {flake}: flake.lock must have a locked root input named nixpkgs')
 
 
-def store_paths(*attrs):
-    pin = ['--inputs-from', str(INPUTS_FROM)] if INPUTS_FROM else []
+def store_paths(inputs_from, *attrs):
+    pin = ['--inputs-from', str(inputs_from)] if inputs_from else []
     out = subprocess.run(['nix', 'build', '--no-link', '--print-out-paths', *pin,
                           *(f'nixpkgs#{a}' for a in attrs)],
-                         capture_output=True, text=True, check=True)
+                         stdout=subprocess.PIPE, text=True, check=True)
     return out.stdout.split()
 
 
 class Typst:
-    def __init__(self, book):
-        typst, poppler, *fonts = store_paths('typst', 'poppler-utils', 'source-serif', 'source-sans',
-                                             'jetbrains-mono')
+    def __init__(self, book, inputs_from):
+        typst, poppler, *fonts = store_paths(inputs_from, 'typst', 'poppler-utils', 'source-serif',
+                                             'source-sans', 'jetbrains-mono')
         self.poppler = Path(poppler) / 'bin'
         self.base = [f'{typst}/bin/typst']
         self.flags = ['--ignore-system-fonts', '--root', str(book.parent)]
         for path in fonts:
             self.flags += ['--font-path', f'{path}/share/fonts']
-        self.book = str(book)
+        self.book = book
         self.fit = {}
 
     def compile(self, pdf, fit):
@@ -56,8 +78,9 @@ class Typst:
         self.fit = dict(fit)
         subprocess.run(self.base + ['compile', *self.flags, *self.inputs(), self.book, str(pdf)], check=True)
 
-    def query(self, selector):
-        out = subprocess.run(self.base + ['query', *self.flags, *self.inputs(), self.book, selector, '--field', 'value'],
+    def query(self, selector, *, field='value'):
+        fields = ['--field', field] if field else []
+        out = subprocess.run(self.base + ['query', *self.flags, *self.inputs(), self.book, selector, *fields],
                              capture_output=True, text=True, check=True)
         return json.loads(out.stdout)
 
@@ -98,13 +121,17 @@ def main():
     parser.add_argument('--inputs-from', type=Path,
                         help="take nixpkgs from this flake's lock, so the build is reproducible")
     args = parser.parse_args()
-    global INPUTS_FROM
-    INPUTS_FROM = args.inputs_from and args.inputs_from.resolve()
+    inputs_from = args.inputs_from and args.inputs_from.resolve()
     book = args.book.resolve()
     pdf = (args.out or book.with_suffix('.pdf')).resolve()
 
+    try:
+        if inputs_from:
+            validate_pin(inputs_from)
+        typst = Typst(book, inputs_from)
+    except subprocess.CalledProcessError:
+        sys.exit('could not set up the build with Nix')
     shutil.copyfile(SKILL / 'template.typ', book.parent / 'template.typ')
-    typst = Typst(book)
     try:
         adjusted = fit_chapters(typst, pdf)
     except subprocess.CalledProcessError:

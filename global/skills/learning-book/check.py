@@ -1,7 +1,7 @@
 """Mechanical checks of a typeset book; build.py runs them after every build.
 
-Fails on: a question whose answer is missing, a printed "Answer n, page P" pointer or
-"<- page Q" back link that does not land where it says, and words outside the text block.
+Fails on missing answers, incorrect answer page numbers or link destinations, misplaced
+section labels, and horizontal text overflow in the body area.
 Reports without failing: counts, pages less than half full with the likely reason, and
 pages that end well short of the bottom while their chapter continues. Read the report;
 an "unexpected" short page usually means a block too tall to fit was pushed to the next.
@@ -10,10 +10,13 @@ an "unexpected" short page usually means a block too tall to fit was pushed to t
 import re
 import subprocess
 import xml.etree.ElementTree as ET
+from collections import Counter
 
 TOLERANCE = 1.0  # points
 # Typst hangs punctuation and hyphens slightly into the margin on purpose.
 HANGING = ',.;:-\xad–—)’”'
+SECTION_LABEL = re.compile(r'<sec-[\w.:-]+>')
+ANSWER_LINK = re.compile(r'(?:\bAnswer \d+\.\d+, page \w+ →|← page \w+)$')
 
 
 def page_texts(pdf, poppler):
@@ -32,8 +35,22 @@ def word_boxes(pdf, poppler):
     return pages
 
 
-def check_answers(questions, answers, texts):
+def answer_links(pdf, poppler):
+    out = subprocess.run([poppler / 'pdftohtml', '-q', '-xml', '-i', '-stdout', str(pdf)],
+                         capture_output=True, text=True, check=True)
+    links = Counter()
+    for page in ET.fromstring(out.stdout).iter('page'):
+        for anchor in page.iter('a'):
+            printed = ANSWER_LINK.search(' '.join(''.join(anchor.itertext()).split()))
+            file, _, dest = anchor.get('href', '').rpartition('#')
+            if printed and file == pdf.with_suffix('.html').name and dest.isdecimal():
+                links[int(page.get('number')), printed.group(), int(dest)] += 1
+    return links
+
+
+def check_answers(questions, answers, texts, links):
     problems = []
+    expected_links = Counter()
     by_number = {a['n']: a for a in answers}
     for q in questions:
         n = q['n']
@@ -47,13 +64,38 @@ def check_answers(questions, answers, texts):
             continue
         # Compare against the printed text, not just the metadata, so a layout that did not
         # converge shows up.
-        if f'Answer {n}, page {a["folio"]}' not in texts[q['page'] - 1]:
+        pointer = f'Answer {n}, page {a["folio"]} →'
+        if pointer not in texts[q['page'] - 1]:
             problems.append(f'question {n}: pointer on page {q["folio"]} does not say page {a["folio"]}')
         answer_page = texts[a['page'] - 1]
-        if not re.search(rf'^\s*{re.escape(n)}\s.*← page {re.escape(q["folio"])}\s*$', answer_page, re.M):
+        backlink = f'← page {q["folio"]}'
+        if not re.search(rf'^\s*{re.escape(n)}\s.*{re.escape(backlink)}\s*$', answer_page, re.M):
             problems.append(f'answer {n}: back link on page {a["folio"]} does not say page {q["folio"]}')
+        expected_links[q['page'], pointer, a['page']] += 1
+        expected_links[a['page'], backlink, q['page']] += 1
     for n in set(by_number) - {q['n'] for q in questions}:
         problems.append(f'answer {n} has no question')
+    for source, printed, dest in expected_links - links:
+        problems.append(f'PDF page {source}: "{printed}" is missing a link to PDF page {dest}')
+    return problems
+
+
+def check_section_labels(typst):
+    # Let Typst decide which candidates are labels. The scan can also find examples
+    # in code fences or comments, which the query will ignore.
+    labels = sorted({label for path in typst.book.parent.rglob('*.typ')
+                     for label in SECTION_LABEL.findall(path.read_text(encoding='utf-8'))})
+    if not labels:
+        return []
+    first, *rest = labels
+    selector = f'selector({first})'
+    if rest:
+        selector += f'.or({", ".join(rest)})'
+    elements = typst.query(selector, field=None)
+    problems = [f'{el["label"]} labels {el["func"]} instead of a heading'
+                for el in elements if el['func'] != 'heading']
+    problems += [f'{label} is defined {count} times'
+                 for label, count in Counter(el['label'] for el in elements).items() if count > 1]
     return problems
 
 
@@ -98,8 +140,9 @@ def run(pdf, typst):
     print(f'pages: {len(texts)}; chapters: {numbered} numbered, {len(chapters) - numbered} unnumbered; '
           f'diagrams: {len(diagrams)}; questions: {len(questions) - cases}; cases: {cases}')
 
-    problems = check_answers(questions, answers, texts)
+    problems = check_answers(questions, answers, texts, answer_links(pdf, typst.poppler))
     print(f'answers checked: {len(answers)}')
+    problems += check_section_labels(typst)
     outside = overflow(boxes, geometry)
     print(f'words outside the text block: {len(outside)}')
     for line in outside[:20]:
