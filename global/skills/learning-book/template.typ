@@ -231,18 +231,20 @@
     line(length: 100%, stroke: 1pt + ink)
   })
 
-  // Tables: rules instead of a grid, no hyphenation in cells. Tables of twelve rows or fewer
-  // stay whole, so a page break can never strand the header row; longer tables may break
-  // and should mark their first row with table.header so it repeats.
+  // Tables: rules instead of a grid, no hyphenation in cells. Tables of five rows or fewer
+  // stay whole; longer ones may break between rows, never inside one, so they should mark
+  // their first row with table.header so it repeats. Keeping long tables whole left
+  // half-empty pages behind them.
   set table(inset: (x: 5pt, y: 4.6pt), align: left + top, stroke: (x, y) => (
     top: if y == 0 { 0.9pt + ink } else if y == 1 { 0.6pt + ink } else { 0.35pt + rule }))
   show table.cell.where(y: 0): set text(font: sans, weight: 700, size: 8.6pt)
+  set table.cell(breakable: false)  // a row moves to the next page whole
   show table: it => {
     let cols = if type(it.columns) == array { it.columns.len() } else { it.columns }
     set text(size: 8.8pt, hyphenate: false)
     set par(justify: false, leading: 0.5em)
     show raw: set text(size: 7.8pt)
-    block(above: block-gap, below: block-gap, breakable: it.children.len() > 12 * cols,
+    block(above: block-gap, below: block-gap, breakable: it.children.len() > 5 * cols,
       stroke: (bottom: 0.9pt + ink), it)
   }
 
