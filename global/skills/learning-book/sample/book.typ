@@ -1,4 +1,4 @@
-// A two-chapter sample that exercises every part of the template's interface.
+// A book with two numbered chapters that exercises the template's interface.
 // Build: python3 ../build.py book.typ
 #import "template.typ": *
 
@@ -23,6 +23,12 @@ $ mkdir scratch && cd scratch && git init -q -b main
 ```
 ]
 
+#part("Objects and references")[
+Read the files Git writes for a snapshot, then use its history of references to recover work.
+]
+
+#group("Reading the repository")
+
 #chapter("Three kinds of object", label: <ch-objects>)[
 #takeaways[
   - read any commit, tree or file straight from Git's object store;
@@ -32,7 +38,7 @@ $ mkdir scratch && cd scratch && git init -q -b main
 Git stores your history as files named by a hash of their contents. Once you can read
 those files you no longer need to trust what a porcelain command prints about them.
 
-== Blobs: file contents with no name
+== Blobs: file contents with no name <sec-blobs>
 
 A _blob_ holds a file's bytes and nothing else: no name, no permissions, no date. Its id is
 the SHA-1 of a short header plus those bytes, so two files with the same contents share one
@@ -76,8 +82,8 @@ $ git cat-file -p HEAD^{tree}
 >> 100644 blob ce013625030ba8dba906f756967f9e9ca394464a	greeting.txt
 ```
 
-The blob id in the tree is the one `hash-object` printed before the commit existed. Git did
-not copy the file; it computed the same name for the same bytes.
+The blob id in the tree is the one `hash-object` printed in
+#link(<sec-blobs>)[Blobs]. Git computed the same name for the same bytes.
 
 #table(columns: (auto, 1fr, 1fr),
   [Object], [Holds], [Changes when],
@@ -124,8 +130,9 @@ until garbage collection decides nothing needs it.
 
 == The reflog
 
-Every time `HEAD` moves, Git appends the old and new ids to the _reflog_. Here a second
-commit is made and then thrown away with `reset --hard`:
+Every time `HEAD` moves, Git appends the old and new ids to the _reflog_. Here
+`reset --hard` throws away the second commit. Use its reflog entry to create the rescue
+branch before the next exercise:
 
 ```terminal
 $ echo 'hi' >> greeting.txt
@@ -136,18 +143,18 @@ $ git reflog
 36b93bb HEAD@{0}: reset: moving to HEAD~1
 >> 3428417 HEAD@{1}: commit: Extend greeting
 36b93bb HEAD@{2}: commit (initial): Add greeting
+$ git branch rescue 3428417
 ```
 
-No branch names `3428417` any more, but the reflog does, and an object that any reflog
-entry names counts as reachable. Recovery is one command:
-`git branch rescue 3428417`.
+The reflog keeps commit `3428417` reachable even without the rescue branch.
 
 #exercise("Make garbage collection take it", where: "Scratch repository", disposable: true)[
-Do this only in the scratch repository. Delete the rescue branch if you made one, expire the reflog, and
+Do this only in the scratch repository. Delete the rescue branch, expire the reflog, and
 collect garbage now instead of on Git's schedule:
 
 ```terminal
 $ git branch -D rescue
+Deleted branch rescue (was 3428417).
 $ git reflog expire --expire-unreachable=now --all
 $ git gc --prune=now -q
 $ git cat-file -t 3428417
@@ -159,8 +166,8 @@ unreachable object. On a normal repository the first step waits 30 days for unre
 entries (`gc.reflogExpireUnreachable`).
 ]
 
-#aside[Each branch has its own reflog too, under `.git/logs/refs/heads/`. Both are local:
-a fresh clone starts with empty reflogs, and pushing never sends them.]
+#aside[Each branch has its own reflog under `.git/logs/refs/heads/`. Reflogs are local.
+A clone starts its own reflogs and does not copy the source repository's reflog history.]
 
 #case("The force-push on Friday", meta: [Reproduced in a scratch repository])[
 On Friday afternoon a teammate ran `git reset --hard HEAD~3` on `main`, then
@@ -183,7 +190,7 @@ has run `gc` with expiry since, and the next automatic `gc` may delete it. Branc
 
 #chapter("Glossary", numbered: false)[
 #glossary(
-  ([blob], [A file's contents, named by their hash. No name or mode.], <ch-objects>),
+  ([blob], [A file's contents, named by their hash. No name or mode.], <sec-blobs>),
   ([commit], [A tree, its parents, an author and a message.], <ch-objects>),
   ([ref], [A name for a commit id, such as a branch.], <ch-refs>),
   ([reflog], [The local log of where `HEAD` and each branch pointed.], <ch-refs>),

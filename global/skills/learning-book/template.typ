@@ -14,7 +14,7 @@
 //                                                               (numbered chapters only)
 //   #aside[body]                                                a side note
 //   #diagram(path, caption)                                     an SVG figure
-//   #glossary(([term], [definition], <chapter-label>), ...)
+//   #glossary(([term], [definition], <heading-label>), ...)      link to a section or chapter
 //   ```terminal  lines: "$ cmd" (command), ">> out" (highlighted output), else output
 //   ```lang      ordinary code; long blocks split with three lines kept on each side
 
@@ -513,8 +513,8 @@
 
 // ---------------------------------------------------------------- glossary
 
-// Term, definition, and the number of the chapter that introduces it, linked. A term
-// from an unnumbered chapter, such as an introduction, links with its page instead.
+// Each term links to the heading that introduces it. Show the chapter number for
+// numbered headings and the folio for unnumbered headings.
 // Its row gap follows the chapter's fit level, since the paragraph gaps the level adjusts
 // barely occur here.
 #let glossary(..entries) = block(above: 2 * unit, context {
