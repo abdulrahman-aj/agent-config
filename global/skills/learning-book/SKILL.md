@@ -162,3 +162,10 @@ input doesn't exist. Literal code such as `<sec-topic>` is not a field.
 Give each worker files no other worker owns. Split a long review into page ranges, pin
 the revision, and track coverage until every range has a report; a worker's turn
 ending is not the review ending.
+
+Waiting is a tree: you wait on your workers, and whoever started you waits on you.
+If you were started by another agent, every turn you end wakes it, so end a turn only
+for a real question (scope, behavior, cost, reversibility) or a stage ready for
+review. While workers run, block on them with your harness's wait (in T3,
+`t3_thread_wait` with `untilDelegatedWorkSettled`, repeated on timeout), even when a
+tool suggests ending your turn. Decide everything else yourself.
