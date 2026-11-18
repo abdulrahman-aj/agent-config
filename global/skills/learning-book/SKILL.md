@@ -88,6 +88,12 @@ wrong page, and text outside the margins. It cannot see inside diagrams; the vis
 below covers those. It reports short pages with a likely reason;
 treat every "unexpected" one as a layout bug to fix.
 
+If others will build the book, copy `build.py`, `check.py` and `template.typ` into its
+repository (for example `tools/typeset/`, with a note naming the skill commit) and add a
+`make pdf` that runs `nix shell nixpkgs#python3 -c python3 tools/typeset/build.py
+book/book.typ`. `build.py` uses the template next to itself, so the copy needs no edits.
+Test it from a fresh clone.
+
 ## 5. Look at it
 
 Render every page and look at each one:
