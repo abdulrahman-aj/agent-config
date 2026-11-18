@@ -2,8 +2,10 @@
 
 ## Every checkpoint PDF
 
-- Freeze the PDF under a name that includes its source commit, and give the user that
-  PDF in a form they can open where they read, such as a link.
+- Freeze the PDF inside the repository, in a gitignored folder such as
+  `book/out/reviews/review-<commit>.pdf`, never in shared user directories like
+  `~/.local/share`. Give the user that PDF in a form they can open where they read,
+  such as a link.
 
 ## Before a release
 

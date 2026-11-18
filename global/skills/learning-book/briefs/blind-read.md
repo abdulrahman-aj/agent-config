@@ -6,8 +6,8 @@ start it with `common.md`: the reader must not see the repository or sources.
 
 How to fill it in:
 
-- Freeze the PDF under a name that includes its source commit, so it can't change
-  while the reader works.
+- Freeze the PDF under a name that includes its source commit, in the repository's
+  gitignored `book/out/reviews/`, so it can't change while the reader works.
 - Give only the reader, their goals and the settled decisions. Settled decisions keep
   the reader from spending the turn re-arguing them; anything more makes the read less
   blind.
