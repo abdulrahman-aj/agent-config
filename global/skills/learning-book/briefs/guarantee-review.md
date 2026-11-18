@@ -12,8 +12,8 @@ When to use it:
 - After each fix round: send the diff and the reviewer's own findings back to the same
   reviewer. Fixes create new races near the old ones.
 
-A whole book takes several turns. Plan them in one thread, give each turn its range, and
-track coverage until every range has a report.
+A whole book takes several turns. Give each turn a page range and the pinned revision,
+and track coverage until every range has a report.
 
 ---
 
@@ -47,6 +47,6 @@ and flow are out of scope. Say "none" if nothing meets the bar.
 ## Report
 
 Findings most severe first: tag, location (PDF page, or plan section) and quoted
-phrase, `file:line` where it applies, the problem,
-the reproduction or source, and the simplest correct fix. Then the ranges you did not
+phrase, `file:line` where it applies, the problem, the reproduction or source, and the
+simplest correct fix. Then the ranges you did not
 cover and the claims you could not run.
