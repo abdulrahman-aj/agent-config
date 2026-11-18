@@ -2,8 +2,8 @@
 
 Paste this block at the top of every brief, then fill the fields in angle brackets
 that apply. Delete fields and rules that can't apply at this stage (for example, the
-lab rules in a book without a lab, or the PDF before one exists). The blind reader
-gets none of the repository fields; see `blind-read.md`.
+lab rules in a book without a lab, or the PDF before one exists). Never use it for
+the blind read; `blind-read.md` stands alone.
 
 ---
 
@@ -36,8 +36,8 @@ gets none of the repository fields; see `blind-read.md`.
   a probe depends on server-wide state (system views, replication, global settings),
   use your own server.
 - Recheck a chapter's printed commands with `<VERIFY_CHAPTER_COMMAND>`.
-- Run the whole test suite once from fresh state before you report, because tests
-  can pass alone and fail together.
+- Run the checks your assignment affects and report their results. The full suite
+  runs once per batch after you report.
 
 ## Standards
 
@@ -50,7 +50,8 @@ gets none of the repository fields; see `blind-read.md`.
   your report.
 - A claimed guarantee (a lock holds, a retry is safe, a cache stays fresh) needs a test
   that runs the interleaving that would break it and checks database or observable
-  state. Never assert exact output strings in tests.
+  state. The verifier checks printed transcripts; in tests, assert output only where
+  output is the interface.
 - In labs, wait on observable state (a row, a lock in a system view), never on sleeps
   or thread timing. Scope environment changes to the test or subprocess that needs
   them; never set them at module level.
@@ -81,4 +82,4 @@ End your turn with one message containing everything:
 2. The verification you ran and its result (verify counts, test pass or fail).
 3. Edits needed in files you don't own, with exact text.
 4. Anything in the brief you disagree with, with evidence.
-5. Anything still running or unfinished.
+5. Unfinished checks, with the blocker and the last known result.

@@ -18,8 +18,8 @@ Draw these SVG diagrams. Edit only the SVG files named below.
 Follow `<STYLE_MODEL.svg>`, or for the first diagram these values: `<FONTS, COLORS,
 WIDTH, MAX_HEIGHT>`.
 
-- Text uses `'Source Sans 3'`; code and SQL labels use `'JetBrains Mono'`. No other
-  fonts.
+- Use the template's fonts, with family names quoted in the SVG, such as
+  `'Source Sans 3'` for text and `'JetBrains Mono'` for code. No other fonts.
 - Every label sits inside its box with margin, and no text crosses a line.
 - Draw only what the text and the lab show. No icons, no decoration, no title inside
   the SVG (the caption is separate).
@@ -29,8 +29,8 @@ WIDTH, MAX_HEIGHT>`.
 `<FOR EACH: file name; the section and label it illustrates; the lab command or source;
 the events, values and order it must show>`
 
-Read the section and run the lab before drawing. Every event, value and order in the
-diagram must match the lab's real output or the cited source.
+Read the section, then run the cited lab or read the cited source before drawing.
+Every event, value and order in the diagram must match that evidence.
 
 ## Check your work
 

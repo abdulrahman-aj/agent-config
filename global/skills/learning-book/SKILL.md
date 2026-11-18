@@ -38,6 +38,8 @@ terms the reader will look up again.
 If the book promises to replace or cover a source, list the source's ideas section by
 section and record where the book teaches each one, with its reasoning and limits.
 Mark each covered, thin, or out of scope, and repeat the audit after a restructure.
+If the book promises lessons that transfer across stacks, state each principle before
+its lab implementation, and show a second stack where it behaves differently.
 
 Admit a new tool or topic only when you can name the reader's decision it teaches and
 what the existing material cannot show. Check any claim about maturity or adoption.
@@ -53,9 +55,11 @@ the rule that decides each verdict before the first entry, then check every entr
 against it. Label every navigation element: a table gets a title, and a link's text
 names where it goes. An unlabeled link reads as part of whatever sits next to it.
 
-Before drafting in parallel, build one representative chapter end to end: prose, a
-runnable exercise with its answer, a fact-check and a rendered PDF. Review it with the
-user, fix what the other chapters would inherit, and use it as the writers' model.
+Agree the chapter outline with the user before drafting. Then, before writing the
+rest of the book, build one representative chapter end to end using the lab, trust and
+typesetting rules below: prose, a runnable exercise with its answer, a fact-check and a
+rendered PDF. Review it with the user, fix what the other chapters would inherit, and
+use it as the writers' model.
 
 Give readers a chance to try the material and recall it. Show what happened in a real
 case and ask the reader to judge before giving the verdict. Ask recall questions that
@@ -113,8 +117,10 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
   exercise.
 - Make `make verify` replay the printed commands and compare output and exit status.
   Before a release, run it from a fresh clone with fresh lab state, following the
-  book's printed setup through the documented entry point. On a mismatch, save the
-  command, exit status and raw output. Labs print one line per outcome so the book can
+  book's printed setup through the documented entry point, companion labs included.
+  Give replayed commands the environment a reader has after setup, and declare the
+  expected exit status of each intentional failure. On a mismatch, save the command,
+  exit status and raw output. Labs print one line per outcome so the book can
   quote the output directly.
 - Name lab folders by topic (`ch05-lazy-load`, not `ch05`).
 - Keep the linters and type checkers that editors run by default at zero findings,
@@ -123,8 +129,9 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
   and the formatter check in `make verify`, and check that every code block the book
   quotes still matches its lab file.
 - Decide the split early. The book gives setup once, then shows the plain command the
-  reader runs and the one output that settles each point. The lab carries run modes,
-  variants and detail, in docstrings and a `lab/README`. Add a markdown file per lab
+  reader runs and the output that settles each point. The lab carries run modes,
+  variants and detail: each lab's docstring gives its command, variants and book
+  section, and `lab/README` holds shared setup. Add a markdown file per lab
   only for depth the book lacks.
 - Don't print a short implementation as "the pattern" when it hides failure modes that
   matter in production. Show what the lab demonstrates, list the hard parts as what to
@@ -133,11 +140,14 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
   backend in `pg_stat_activity`, never on sleeps or thread timing. To force an
   interleaving, drive both sessions step by step from one thread.
 - Test the lab's real code and show that the test fails with the mechanism removed.
-  Do not assert stdout in tests. Root-cause every flaky result.
+  The verifier checks printed transcripts; tests assert behavior, including output
+  only where output is the interface. Root-cause every flaky result.
 
 ## 5. Typeset
 
-Write `book.typ` against this skill's `template.typ`. The template header lists the
+Write `book.typ` against this skill's `template.typ`. The template is screen-first.
+For a printed edition, change the copy beside `build.py` (the build overwrites the one
+next to `book.typ`) and check binding margins and chapter starts in the sample. The template header lists the
 interface and `sample/book.typ` shows how to use it. Keep SVG diagrams next to
 `book.typ` and quote font names in them, such as `'Source Sans 3'`, `'Source Serif 4'`
 or `'JetBrains Mono'`.
@@ -178,8 +188,10 @@ nix shell nixpkgs#poppler-utils -c pdftoppm -r 80 -png book.pdf out/page
 
 Freeze the PDF under a name that includes its source commit for a blind read. Give
 the reviewer only the PDF, a way to render pages, and the review criteria. Track which
-pages they covered and check every proposed fix. Finish when both the fact-check
-rounds and the blind read are clean.
+pages they covered and check every proposed fix. At each user checkpoint, give the
+user that PDF in a form they can open where they read, such as a link. Finish when the
+fact-check and guarantee reviews have no supported blocker or major finding left, and
+the blind read has no "must fix" left.
 
 Reviews check that the book is right, not that it teaches. To test teaching, give a
 reader a new task for the top goal, with a checkable result, such as a codebase with
@@ -190,11 +202,13 @@ teaching there.
 
 You own the assembled book. Workers and reviewers propose; you check each result
 against the book, choose the fix that is best for the reader, and record the findings
-you decline and why. Never choose a fix because it is less work.
+you decline and why. Never choose a fix because it is less work for you; between
+equally good fixes, take the simpler. Raise real budget or scope changes with the user.
 
 Build every brief from the templates in `briefs/`. Each one carries the traps that
 workers fell into on an earlier book, so a brief written from scratch repeats them.
-Start with `briefs/common.md`, add the role's template, and fill the fields in angle
+Start with `briefs/common.md` (except for the blind read, which uses `blind-read.md`
+alone), add the role's template, and fill the fields in angle
 brackets that apply at this stage. Delete fields and rules that don't apply, and write
 "none yet" where an input doesn't exist. Literal code such as `<sec-topic>` is not a
 field.
@@ -209,8 +223,9 @@ field.
 | Draw diagrams | `diagram.md` | When a mechanism needs one |
 | Read the frozen PDF cold | `blind-read.md` | Each major revision |
 
-Give each worker files no other worker owns. Split a long review into page ranges in
-one thread and track coverage until every range has a report; a worker's turn ending
-is not the review ending. When a worker reports, go through `briefs/review-worker.md`
+Give each worker files no other worker owns. Send fix batches only for findings you
+accept. Split a long review into page ranges, pin the PDF revision, and track coverage
+until every range has a report; a worker's turn ending is not the review ending. Each
+recheck carries the earlier findings and the changed scope. When a worker reports, go through `briefs/review-worker.md`
 before accepting anything, and after parallel workers finish, build the assembled
 book and check each changed chapter's flow (section 2).

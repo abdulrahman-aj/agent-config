@@ -41,7 +41,7 @@ agree with>`
    passes, or fails for another reason, proves nothing. Leave heavy directories (virtual
    environments, database files, node_modules) out of any copy, and delete it after.
 3. When the lab's output changed, paste the fresh output into the book and rerun
-   `<VERIFY_CHAPTER_COMMAND>`. Then run the whole suite from fresh state.
+   `<VERIFY_CHAPTER_COMMAND>`. Rerun the affected tests.
 
 ## Report additions
 

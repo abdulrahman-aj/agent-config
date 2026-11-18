@@ -26,8 +26,10 @@ sources or any repository. Extract and render pages with:
 
 ```
 nix shell nixpkgs#poppler-utils -c pdftotext -layout -f N -l N <pdf> -
-nix shell nixpkgs#poppler-utils -c pdftoppm -r 70 -png -f N -l N <pdf> <out>
+nix shell nixpkgs#poppler-utils -c pdftoppm -r 70 -png -f N -l N <pdf> <SCRATCH_DIR>/p
 ```
+
+Write renders only under `<SCRATCH_DIR>` and delete them when done.
 
 The reader: `<WHO THEY ARE AND WHAT THEY KNOW>`. Their goals, in order: `<GOALS>`.
 Your pages: `<RANGE, or the whole book>`.
@@ -54,5 +56,5 @@ Settled decisions, don't re-argue them: `<LIST>`.
 
 Findings most severe first, each with PDF page (and printed page number if different),
 quoted phrase, the problem and a concrete fix. Separate "must fix" (the reader is
-confused, misled or slowed badly) from "taste". List the pages you read closely and
-those you skimmed.
+confused, misled or slowed badly) from "taste". List the pages you read closely, those
+you skimmed and those you didn't reach.
