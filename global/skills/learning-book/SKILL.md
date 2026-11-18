@@ -27,23 +27,40 @@ terms the reader will look up again.
 
 Give readers a chance to try the material and recall it. Show what happened in a real
 case and ask the reader to judge before giving the verdict. Ask recall questions that
-test decisions and put the answers at the chapter end. Explain what you would choose
-and which trade-offs you would accept. When covering a system you built, include the
-mistakes, costs, and open problems.
+test decisions, not trivia, and put the answers at the chapter end. Explain what you
+would choose and which trade-offs you would accept.
 
-Run every command and verify claims against sources. Quote real output. Trim it when
-needed and preserve the text of the lines you quote. Describe unverified output
-without quoting it. Use primary sources for definitions and state the book's own
-implementation choices as choices. Run `unslop` over every chapter. Draw a diagram
-only for a real mechanism, never as decoration.
+Start each chapter with its material, not an announcement of it, and end without a
+recap. Skip definitions of what the reader already knows. Draw a diagram only for a
+real mechanism. Run `unslop` over every chapter.
 
-Readers stop trusting a book that defines what they already know, opens chapters by
-announcing them, closes them with recaps, or asks recall questions that test trivia.
+## 3. Trust
 
-## 3. Labs
+One wrong fact makes the reader doubt every other page, so every claim gets checked.
 
-- For each guarantee, run the scenario that would break it without the mechanism.
-  Include concurrent writers when claiming convergence.
+1. Run every command the book prints and quote its real output. Trim long output, but
+   never edit a line you keep. If you haven't run it, describe it without quoting it.
+2. Check every claim against a primary source: the specification, the official
+   documentation at the version the book names, the original paper or book. A blog
+   post or a model's memory is a lead, not a source.
+3. Check definitions against the original author, and the tools you map them to
+   against their current documentation. A definition that bakes in one
+   implementation, such as who commits or which library, is wrong for the next
+   reader. State the book's own choices as choices.
+4. Distrust "all", "every", "never" and "only". Look for the counterexample.
+5. A guarantee (a lock holds, a retry is safe, a cache stays fresh) needs a
+   reproduction that would fail without the mechanism, not an argument.
+6. A model from a different family than the writer fact-checks the whole book
+   before typesetting. A strong reasoning model checks the guarantees early. Every
+   finding comes with a reproduction or a source, and fixes go back to the same
+   reviewer until a round comes back clean.
+7. Show the real mistakes, with what they cost. When the book covers a system you
+   built, its costs and open problems sit next to its wins.
+
+## 4. Labs
+
+- A lab that proves a guarantee (section 3, rule 5) runs the breaking scenario. When it
+  claims convergence, that includes concurrent writers.
 - Make `make verify` replay the printed commands and compare output and exit status.
   Run it from a fresh clone using the book's printed setup. Labs print one line per
   outcome so the book can quote the output directly.
@@ -52,7 +69,7 @@ announcing them, closes them with recaps, or asks recall questions that test tri
 - Test the lab's real code and show that the test fails with the mechanism removed.
   Do not assert stdout in tests. Investigate flaky results.
 
-## 4. Typeset
+## 5. Typeset
 
 Write `book.typ` against this skill's `template.typ`. The template header lists the
 interface and `sample/book.typ` shows how to use it. Keep SVG diagrams next to
@@ -81,12 +98,7 @@ the repository root and test it from a fresh clone.
 nix shell --inputs-from ./lab nixpkgs#python3 -c python3 tools/typeset/build.py --inputs-from ./lab book/book.typ
 ```
 
-## 5. Review
-
-Start correctness review early. Check claims, definitions, and tool mappings against
-primary sources. Reproduce commands and test whether the guarantees hold. Give each
-finding a reproduction or source. After fixes, send the reviewer the findings and the
-fix diff, and repeat until clean.
+## 6. Look at it
 
 Render every page and inspect it for clipped diagram labels, narrow table columns,
 awkward box splits, and stranded headings.
@@ -98,9 +110,9 @@ nix shell nixpkgs#poppler-utils -c pdftoppm -r 80 -png book.pdf out/page
 
 Freeze the PDF for a blind read. Give the reviewer the PDF, page images, and the
 review criteria. Track which pages they covered and check every proposed fix. Finish
-when both the correctness review and the blind read are clean.
+when both the fact-check rounds and the blind read are clean.
 
-## 6. Brief workers
+## 7. Brief workers
 
 Specify the content the reader should see rather than giving edit notes they might
 copy into the prose. Draw diagrams from real lab output and check each rendering
