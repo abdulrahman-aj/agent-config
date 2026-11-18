@@ -28,20 +28,31 @@ LEVELS = [0, -1, -2, -3, 1, 2, 3, 4]
 
 
 def validate_pin(flake):
-    lock = flake / 'flake.lock'
-    committed = subprocess.run(['git', '-C', str(flake), 'show', 'HEAD:./flake.lock'],
-                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    if committed.returncode or not lock.is_file() or lock.read_bytes() != committed.stdout:
-        sys.exit(f'--inputs-from {flake}: flake.lock must match the committed lock')
+    lock = flake / "flake.lock"
+    committed = subprocess.run(
+        ["git", "-C", str(flake), "show", "HEAD:./flake.lock"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if (
+        committed.returncode
+        or not lock.is_file()
+        or lock.read_bytes() != committed.stdout
+    ):
+        sys.exit(f"--inputs-from {flake}: flake.lock must match the committed lock")
 
-    out = subprocess.run(['nix', 'flake', 'metadata', '--json', '--no-update-lock-file', str(flake)],
-                         stdout=subprocess.PIPE, text=True, check=True)
-    locks = json.loads(out.stdout)['locks']
-    nodes = locks['nodes']
-    root = nodes[locks['root']]
+    out = subprocess.run(
+        ["nix", "flake", "metadata", "--json", "--no-update-lock-file", str(flake)],
+        stdout=subprocess.PIPE,
+        text=True,
+        check=True,
+    )
+    locks = json.loads(out.stdout)["locks"]
+    nodes = locks["nodes"]
+    root = nodes[locks["root"]]
 
     def input_node(node, name):
-        target = node.get('inputs', {}).get(name)
+        target = node.get("inputs", {}).get(name)
         if isinstance(target, list):  # A follows path starts at the root.
             node = root
             for step in target:
@@ -49,43 +60,69 @@ def validate_pin(flake):
             return node
         return nodes.get(target, {})
 
-    if 'locked' not in input_node(root, 'nixpkgs'):
-        sys.exit(f'--inputs-from {flake}: flake.lock must have a locked root input named nixpkgs')
+    if "locked" not in input_node(root, "nixpkgs"):
+        sys.exit(
+            f"--inputs-from {flake}: flake.lock must have a locked root input named nixpkgs"
+        )
 
 
 def store_paths(inputs_from, *attrs):
-    pin = ['--inputs-from', str(inputs_from)] if inputs_from else []
-    out = subprocess.run(['nix', 'build', '--no-link', '--print-out-paths', *pin,
-                          *(f'nixpkgs#{a}' for a in attrs)],
-                         stdout=subprocess.PIPE, text=True, check=True)
+    pin = ["--inputs-from", str(inputs_from)] if inputs_from else []
+    out = subprocess.run(
+        [
+            "nix",
+            "build",
+            "--no-link",
+            "--print-out-paths",
+            *pin,
+            *(f"nixpkgs#{a}" for a in attrs),
+        ],
+        stdout=subprocess.PIPE,
+        text=True,
+        check=True,
+    )
     return out.stdout.split()
 
 
 class Typst:
     def __init__(self, book, inputs_from):
-        typst, poppler, *fonts = store_paths(inputs_from, 'typst', 'poppler-utils', 'source-serif',
-                                             'source-sans', 'jetbrains-mono')
-        self.poppler = Path(poppler) / 'bin'
-        self.base = [f'{typst}/bin/typst']
-        self.flags = ['--ignore-system-fonts', '--root', str(book.parent)]
+        typst, poppler, *fonts = store_paths(
+            inputs_from,
+            "typst",
+            "poppler-utils",
+            "source-serif",
+            "source-sans",
+            "jetbrains-mono",
+        )
+        self.poppler = Path(poppler) / "bin"
+        self.base = [f"{typst}/bin/typst"]
+        self.flags = ["--ignore-system-fonts", "--root", str(book.parent)]
         for path in fonts:
-            self.flags += ['--font-path', f'{path}/share/fonts']
+            self.flags += ["--font-path", f"{path}/share/fonts"]
         self.book = book
         self.fit = {}
 
     def compile(self, pdf, fit):
         # Queries must see the same spacing levels as the last compile, or their pages differ.
         self.fit = dict(fit)
-        subprocess.run(self.base + ['compile', *self.flags, *self.inputs(), self.book, str(pdf)], check=True)
+        subprocess.run(
+            self.base + ["compile", *self.flags, *self.inputs(), self.book, str(pdf)],
+            check=True,
+        )
 
-    def query(self, selector, *, field='value'):
-        fields = ['--field', field] if field else []
-        out = subprocess.run(self.base + ['query', *self.flags, *self.inputs(), self.book, selector, *fields],
-                             capture_output=True, text=True, check=True)
+    def query(self, selector, *, field="value"):
+        fields = ["--field", field] if field else []
+        out = subprocess.run(
+            self.base
+            + ["query", *self.flags, *self.inputs(), self.book, selector, *fields],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         return json.loads(out.stdout)
 
     def inputs(self):
-        return ['--input', f'fit={json.dumps(self.fit)}']
+        return ["--input", f"fit={json.dumps(self.fit)}"]
 
 
 def fit_chapters(typst, pdf):
@@ -94,12 +131,12 @@ def fit_chapters(typst, pdf):
     for _ in range(len(LEVELS) + 1):
         typst.compile(pdf, fit)
         changed = False
-        for probe in typst.query('<fit>'):
-            chapter, fill = str(probe['chapter']), probe['fill']
+        for probe in typst.query("<fit>"):
+            chapter, fill = str(probe["chapter"]), probe["fill"]
             history = tried.setdefault(chapter, {})
             history[fit.get(chapter, 0)] = fill
             # A chapter that fits on its opener page has no runt to fix.
-            if fill >= RUNT or probe['page'] == probe['opener']:
+            if fill >= RUNT or probe["page"] == probe["opener"]:
                 continue
             remaining = [level for level in LEVELS if level not in history]
             if remaining:
@@ -116,29 +153,32 @@ def fit_chapters(typst, pdf):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('book', type=Path)
-    parser.add_argument('--out', type=Path, help='default: book.typ with a .pdf suffix')
-    parser.add_argument('--inputs-from', type=Path,
-                        help="take nixpkgs from this flake's lock, so the build is reproducible")
+    parser.add_argument("book", type=Path)
+    parser.add_argument("--out", type=Path, help="default: book.typ with a .pdf suffix")
+    parser.add_argument(
+        "--inputs-from",
+        type=Path,
+        help="take nixpkgs from this flake's lock, so the build is reproducible",
+    )
     args = parser.parse_args()
     inputs_from = args.inputs_from and args.inputs_from.resolve()
     book = args.book.resolve()
-    pdf = (args.out or book.with_suffix('.pdf')).resolve()
+    pdf = (args.out or book.with_suffix(".pdf")).resolve()
 
     try:
         if inputs_from:
             validate_pin(inputs_from)
         typst = Typst(book, inputs_from)
     except subprocess.CalledProcessError:
-        sys.exit('could not set up the build with Nix')
-    shutil.copyfile(SKILL / 'template.typ', book.parent / 'template.typ')
+        sys.exit("could not set up the build with Nix")
+    shutil.copyfile(SKILL / "template.typ", book.parent / "template.typ")
     try:
         adjusted = fit_chapters(typst, pdf)
     except subprocess.CalledProcessError:
-        sys.exit('typst failed; its error is above')
-    print(f'wrote {pdf}; spacing adjusted (chapter: level): {adjusted or "none"}')
+        sys.exit("typst failed; its error is above")
+    print(f"wrote {pdf}; spacing adjusted (chapter: level): {adjusted or 'none'}")
     sys.exit(check.run(pdf, typst))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
