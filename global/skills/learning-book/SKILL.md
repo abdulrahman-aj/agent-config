@@ -92,7 +92,9 @@ If others will build the book, copy `build.py`, `check.py` and `template.typ` in
 repository (for example `tools/typeset/`, with a note naming the skill commit) and add a
 `make pdf` that runs `nix shell nixpkgs#python3 -c python3 tools/typeset/build.py
 book/book.typ`. `build.py` uses the template next to itself, so the copy needs no edits.
-Test it from a fresh clone.
+Pin nixpkgs so a later build gives the same pages: pass `--inputs-from <dir>` to both
+`nix shell` and `build.py`, naming a flake with a committed `flake.lock`, such as the
+book's lab. Test it from a fresh clone.
 
 ## 5. Look at it
 

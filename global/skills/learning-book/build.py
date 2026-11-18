@@ -27,8 +27,14 @@ RUNT = 0.30
 LEVELS = [0, -1, -2, -3, 1, 2, 3, 4]
 
 
+# A flake whose lock pins nixpkgs, set by --inputs-from; None uses the registry's nixpkgs.
+INPUTS_FROM = None
+
+
 def store_paths(*attrs):
-    out = subprocess.run(['nix', 'build', '--no-link', '--print-out-paths', *(f'nixpkgs#{a}' for a in attrs)],
+    pin = ['--inputs-from', str(INPUTS_FROM)] if INPUTS_FROM else []
+    out = subprocess.run(['nix', 'build', '--no-link', '--print-out-paths', *pin,
+                          *(f'nixpkgs#{a}' for a in attrs)],
                          capture_output=True, text=True, check=True)
     return out.stdout.split()
 
@@ -89,7 +95,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('book', type=Path)
     parser.add_argument('--out', type=Path, help='default: book.typ with a .pdf suffix')
+    parser.add_argument('--inputs-from', type=Path,
+                        help="take nixpkgs from this flake's lock, so the build is reproducible")
     args = parser.parse_args()
+    global INPUTS_FROM
+    INPUTS_FROM = args.inputs_from and args.inputs_from.resolve()
     book = args.book.resolve()
     pdf = (args.out or book.with_suffix('.pdf')).resolve()
 
