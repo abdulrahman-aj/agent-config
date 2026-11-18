@@ -29,6 +29,13 @@ def page_texts(pdf, poppler):
     return out.stdout.split("\f")[:-1]
 
 
+def required_attribute(element: ET.Element, name: str) -> str:
+    value = element.get(name)
+    if value is None:
+        raise ValueError(f"Poppler XML: <{element.tag}> is missing {name}")
+    return value
+
+
 def word_boxes(pdf, poppler):
     out = subprocess.run(
         [poppler / "pdftotext", "-bbox", str(pdf), "-"],
@@ -43,10 +50,10 @@ def word_boxes(pdf, poppler):
         pages.append(
             [
                 (
-                    float(w.get("xMin")),
-                    float(w.get("yMin")),
-                    float(w.get("xMax")),
-                    float(w.get("yMax")),
+                    float(required_attribute(w, "xMin")),
+                    float(required_attribute(w, "yMin")),
+                    float(required_attribute(w, "xMax")),
+                    float(required_attribute(w, "yMax")),
                     w.text or "",
                 )
                 for w in page.iter("word")
@@ -68,7 +75,9 @@ def answer_links(pdf, poppler):
             printed = ANSWER_LINK.search(" ".join("".join(anchor.itertext()).split()))
             file, _, dest = anchor.get("href", "").rpartition("#")
             if printed and file == pdf.with_suffix(".html").name and dest.isdecimal():
-                links[int(page.get("number")), printed.group(), int(dest)] += 1
+                links[
+                    int(required_attribute(page, "number")), printed.group(), int(dest)
+                ] += 1
     return links
 
 

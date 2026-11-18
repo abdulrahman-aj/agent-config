@@ -152,7 +152,9 @@ def fit_chapters(typst, pdf):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(
+        description=(__doc__ or "Build the book PDF").splitlines()[0]
+    )
     parser.add_argument("book", type=Path)
     parser.add_argument("--out", type=Path, help="default: book.typ with a .pdf suffix")
     parser.add_argument(
