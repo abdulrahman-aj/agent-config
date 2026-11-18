@@ -168,4 +168,6 @@ If you were started by another agent, every turn you end wakes it, so end a turn
 for a real question (scope, behavior, cost, reversibility) or a stage ready for
 review. While workers run, block on them with your harness's wait (in T3,
 `t3_thread_wait` with `untilDelegatedWorkSettled`, repeated on timeout), even when a
-tool suggests ending your turn. Decide everything else yourself.
+tool suggests ending your turn. With parallel workers, wait on each in turn; one that
+already finished returns at once. To act on early finishers, cycle through them with
+a short timeout. Decide everything else yourself.
