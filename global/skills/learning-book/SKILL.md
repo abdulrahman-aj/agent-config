@@ -16,7 +16,8 @@ and what the exercises must leave untouched. Set the title, subtitle, and goal.
 By default give each book its own private repository with `book/` for the sources and
 `lab/` for runnable exercises. Land changes through PRs. Agree where the PDF goes and
 which source material may be included. If the book might be shared, describe who it
-is for as a group, such as "developers who maintain a service," from the first draft.
+is for as a group, such as "developers who maintain a service," from the first draft,
+and keep quotes from other books short and inside your own commentary.
 
 ## 2. Plan and write
 
@@ -24,6 +25,14 @@ List the chapters and what the reader will be able to do after each one. Cut mat
 that serves none of those goals. Teach prerequisites just before the reader needs
 them. Define each term at first use and keep its name consistent. Use the glossary for
 terms the reader will look up again.
+
+Plan the structure with the arc, because adding it later means a pass over every
+chapter: parts, reading paths for different goals, lookup pages (a symptom index, a
+catalogue) with their own headings and contents entries, and which mechanisms get a
+diagram. If the book rates or classifies things, write the rule that decides each
+verdict before the first entry, then check every entry against it. Every link,
+table and pointer says what it is; an unlabeled link reads as part of whatever is
+next to it.
 
 Give readers a chance to try the material and recall it. Show what happened in a real
 case and ask the reader to judge before giving the verdict. Ask recall questions that
@@ -49,7 +58,8 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
    reader. State the book's own choices as choices.
 4. Distrust "all", "every", "never" and "only". Look for the counterexample.
 5. A guarantee (a lock holds, a retry is safe, a cache stays fresh) needs a
-   reproduction that would fail without the mechanism, not an argument.
+   reproduction that would fail without the mechanism, not an argument. This includes
+   the guarantees in a worked design or a sample page, not only in the labs.
 6. A model from a different family than the writer fact-checks the whole book
    before typesetting. A strong reasoning model checks the guarantees early. Every
    finding comes with a reproduction or a source, and fixes go back to the same
@@ -64,8 +74,17 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
 - Make `make verify` replay the printed commands and compare output and exit status.
   Run it from a fresh clone using the book's printed setup. Labs print one line per
   outcome so the book can quote the output directly.
-- Check quoted code blocks against the lab files. Include linter and type checker
-  configuration the reader's editor can use, and fix their findings.
+- Name lab folders by topic (`ch05-lazy-load`, not `ch05`).
+- Put linter, formatter and type checker configuration where an editor opened at the
+  repository root finds it, and keep the defaults editors run (such as ruff and
+  basedpyright in standard mode) at zero findings. Run them in `make verify`, and
+  check that every code block the book quotes still matches its lab file.
+- Decide the split early. The book carries the argument and the one output that
+  settles each point. The lab carries run modes, variants and detail, in docstrings
+  and a `lab/README`. Add a markdown file per lab only for depth the book lacks.
+- Make concurrency labs deterministic. Wait on database state, such as a blocked
+  backend in `pg_stat_activity`, never on sleeps or thread timing, and force an
+  interleaving with two sessions driven in order.
 - Test the lab's real code and show that the test fails with the mechanism removed.
   Do not assert stdout in tests. Investigate flaky results.
 
@@ -112,9 +131,18 @@ Freeze the PDF for a blind read. Give the reviewer the PDF, page images, and the
 review criteria. Track which pages they covered and check every proposed fix. Finish
 when both the fact-check rounds and the blind read are clean.
 
+Reviews check that the book is right, not that it teaches. Where possible, give a
+reader a task the book should prepare them for, such as a codebase with planted bugs,
+and see what they find.
+
 ## 7. Brief workers
 
 Specify the content the reader should see rather than giving edit notes they might
 copy into the prose. Draw diagrams from real lab output and check each rendering
 against it. After parallel workers finish, build the assembled book and verify the
 section order and chapter takeaways.
+
+Workers never edit checks, tests or tools to make their output pass; say so in the
+brief, and read any diff to those files before the rest. After every fix round, read
+the prose diff for hedged reviewer phrasing and for explanations that were cut, not
+only for correctness.
