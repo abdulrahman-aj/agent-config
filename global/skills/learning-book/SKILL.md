@@ -6,17 +6,17 @@ description: Write a personal learning book and typeset it as a PDF. Use when so
 
 # Learning book
 
-This file is the process. The files it names hold the detail for each stage; open each
-one when you reach that stage, and work through all of it.
+This file is the process. The files it names hold the detail. Open each one at its
+trigger below and follow the steps for that trigger.
 
 | Stage | Open |
 |---|---|
-| Planning the book, before any drafting | `checklists/plan.md` |
-| Setting up the lab, and accepting any lab change | `checklists/labs.md` |
-| After every batch of changes, and before a whole-book read | `checklists/flow.md` |
-| Briefing any worker | `briefs/common.md` plus the role's brief (section 7) |
+| Planning, before any drafting, and whenever the plan changes | `checklists/plan.md` |
+| Before setting up or drafting the first lab, and before accepting a lab change | `checklists/labs.md` |
+| After every batch of changes, after drafting a part, and before a whole-book blind read | `checklists/flow.md` |
+| Briefing a worker | Section 7's role table and assembly rules |
 | Accepting any worker's result | `checklists/review-worker.md` |
-| Sharing a version | `checklists/release.md` |
+| Before sending the user a checkpoint PDF, and before a release | `checklists/release.md` |
 
 ## 1. Scope it
 
@@ -32,7 +32,8 @@ book X") in a plan file. It is the one source for every brief.
 By default give each book its own private repository with `book/` for the sources and
 `lab/` for runnable exercises. Land changes through PRs. Agree where the PDF goes and
 which source material may be included. If the book might be shared, describe who it
-is for as a group, such as "developers who maintain a service," from the first draft.
+is for as a group, such as "developers who maintain a service," from the first draft,
+and quote other books only briefly, inside your own explanation.
 
 ## 2. Plan and write
 
@@ -90,10 +91,8 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
 
 ## 4. Labs
 
-Every printed command runs in the lab, and `make verify` replays them all and compares
-output and exit status. Labs prove guarantees by running the scenario that breaks them.
-The details, from editor linters to deterministic concurrency, are in
-`checklists/labs.md`.
+Labs prove guarantees by running the scenario that breaks them, and the book's printed
+commands are replayed against them. Everything else is in `checklists/labs.md`.
 
 ## 5. Typeset
 
@@ -116,13 +115,15 @@ python3 <this skill>/build.py path/to/book.typ   # writes path/to/book.pdf
 The build gets Typst, fonts, and Poppler from nixpkgs and copies the template next to
 `book.typ`. It tries to reduce short chapter endings. It checks answer page numbers
 and links, section labels, and horizontal text overflow in the body area. It cannot see
-vertical overflow or problems inside diagrams; section 6 covers those.
+vertical overflow or problems inside diagrams; section 6 covers those. When you change
+the template or checker, confirm that a deliberately broken link, label or pin fails
+the build.
 
 ## 6. Look at it
 
 Render every page and inspect it at the size it will be read for clipped diagram
-labels, narrow table columns, awkward box splits, stranded headings, blank pages and
-loose spacing. Review the build's page-fill report.
+labels, vertical overflow, narrow table columns, awkward box splits, stranded
+headings, blank pages and loose spacing. Review the build's page-fill report.
 
 ```bash
 mkdir -p out

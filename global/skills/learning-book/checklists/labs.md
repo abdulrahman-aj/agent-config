@@ -1,12 +1,12 @@
 # Lab checklist
 
-Use this when setting up the lab, and before accepting any lab change.
+Use this before setting up or drafting the first lab, and before accepting any lab change.
 
 ## Verification
 
 - `make verify` replays the printed commands and compares output and exit status. Labs
   print one line per outcome so the book can quote output directly.
-- Before a release, run it from a fresh clone with fresh lab state, following the
+- A fresh-clone run (`release.md` says when) uses fresh lab state and follows the
   book's printed setup through the documented entry point, companion labs included.
 - Give replayed commands the environment a reader has after setup, and declare the
   expected exit status of each intentional failure.

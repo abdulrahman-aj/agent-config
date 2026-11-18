@@ -21,7 +21,6 @@ so check the work, not the report. Skip the steps that don't apply to what chang
    - new technical claims without a source or run, which cluster in new text.
 6. Ask whether the fix is the simplest correct one, and whether it reintroduces the bug
    in a new form. Rerun the original failure and nearby variants.
-7. When prose or figures changed, build the assembled book. Check every code fence is
-   closed, then read each changed section with its neighbors for flow, section order
-   and the chapter's goals.
+7. When prose or figures changed, check every code fence and block is closed. Once the
+   whole batch has finished, build and read it with `flow.md`.
 8. Check the report's "edits needed elsewhere" and apply the ones you agree with.

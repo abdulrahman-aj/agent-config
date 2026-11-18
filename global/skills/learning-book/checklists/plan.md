@@ -3,6 +3,11 @@
 Work through this with the chapter list, before any drafting. Each item added after
 drafting costs a pass over every chapter.
 
+## When the plan changes
+
+Update the plan file first, then the title page, front matter, exercises and capstone
+wherever the old promise appears.
+
 ## Coverage
 
 - The reader's background decides the examples and how much each idea needs

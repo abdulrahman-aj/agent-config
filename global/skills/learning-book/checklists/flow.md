@@ -3,8 +3,8 @@
 Flow breaks most where parallel workers and fix rounds edit one section without reading
 its neighbors. Check it at two costs:
 
-- **After every batch of changes:** read each changed section with the sections around
-  it.
+- **After every batch of changes:** once every worker in the batch has finished, build
+  the assembled book, then read each changed section with the sections around it.
 - **After drafting a part, and before each whole-book blind read:** read the whole book
   in order. First list the key terms with the section that teaches each, and search
   earlier pages for uses.
