@@ -1,13 +1,19 @@
 # Blind read brief
 
 For a reader who sees only the frozen PDF, judging flow and teaching. Run it after each
-major revision, with a model from a different family than the writer. Read only.
+major revision, with a model from a different family than the writer. Read only. Don't
+start it with `common.md`: the reader must not see the repository or sources.
 
 How to fill it in:
 
-- Freeze the PDF to a path that won't change while the reader works.
-- List the settled decisions so the reader doesn't spend the turn re-arguing them.
-- After a revision, name what is new so the reader looks hardest there.
+- Freeze the PDF under a name that includes its source commit, so it can't change
+  while the reader works.
+- Give only the reader, their goals and the settled decisions. Settled decisions keep
+  the reader from spending the turn re-arguing them; anything more makes the read less
+  blind.
+- To split a long book across readers, give every reader the whole PDF and assign each
+  a page range. Read across the range boundaries yourself afterwards.
+- For a targeted reread, add the earlier findings and the pages that changed.
 
 ---
 
@@ -15,14 +21,16 @@ Read-only review. Don't edit any file and don't delegate. Your final message is 
 report.
 
 Read this book as its reader would and report what stops it from reading as one
-excellent book. You get only the PDF: `<FROZEN_PDF_PATH>` (`<N>` pages). Extract a page
-range with `pdftotext -layout -f N -l N <pdf> -` and render a page with
-`pdftoppm -r 70 -png -f N -l N <pdf> <out>`, then look at it. Don't read the sources or
-any repository.
+excellent book. You get only the PDF: `<FROZEN_PDF_PATH>` (`<N>` pages). Don't read the
+sources or any repository. Extract and render pages with:
+
+```
+nix shell nixpkgs#poppler-utils -c pdftotext -layout -f N -l N <pdf> -
+nix shell nixpkgs#poppler-utils -c pdftoppm -r 70 -png -f N -l N <pdf> <out>
+```
 
 The reader: `<WHO THEY ARE AND WHAT THEY KNOW>`. Their goals, in order: `<GOALS>`.
-
-`<WHAT IS NEW IN THIS VERSION, if a revision>`
+Your pages: `<RANGE, or the whole book>`.
 
 Look for:
 
@@ -35,16 +43,16 @@ Look for:
    chapter.
 4. Prose that slows the reader: padding, recaps, mannered phrasing, one concept under
    several names, text that sounds machine-written.
-5. Teaching: recall questions that test trivia, exercises that don't exercise the point,
-   output that doesn't show what the text claims.
+5. Teaching: recall questions that test trivia, exercises that don't exercise the
+   point, output that doesn't show what the text claims.
 6. Layout: diagrams you can't read at page size, tables squeezed into narrow columns,
-   headings stranded at a page bottom.
+   headings stranded at a page bottom, blank or half-empty pages.
 
 Settled decisions, don't re-argue them: `<LIST>`.
 
 ## Report
 
-Findings most severe first, each with PDF page, quoted phrase, the problem and a concrete
-fix. Separate "must fix" (the reader is confused, misled or slowed badly) from "taste".
-List the page ranges you read closely and those you skimmed. End with at most five lines
-on the book's biggest strength and biggest remaining weakness.
+Findings most severe first, each with PDF page (and printed page number if different),
+quoted phrase, the problem and a concrete fix. Separate "must fix" (the reader is
+confused, misled or slowed badly) from "taste". List the pages you read closely and
+those you skimmed.
