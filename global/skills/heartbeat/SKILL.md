@@ -1,7 +1,6 @@
 ---
 name: heartbeat
-description: Keep an orchestrator thread working while the user is away with a 55-minute heartbeat. The user triggers it once per thread.
-disable-model-invocation: true
+description: Keep an orchestrator thread working while the user is away with a 55-minute heartbeat. Use when the user asks for a heartbeat or says they will be away while children or jobs run.
 ---
 
 # Heartbeat
@@ -20,4 +19,4 @@ something could progress.
 * **Stop.** When nothing can move without the user (no children, no running jobs, no unblocked queued work),
   tell the user and delete the schedule.
 * **Restart.** Schedule it again when the next child or job starts, or when the user returns. If these
-  instructions are no longer in context, ask the user to trigger the heartbeat skill again.
+  instructions are no longer in context, load the heartbeat skill again.
