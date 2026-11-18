@@ -10,6 +10,9 @@ wherever the old promise appears.
 
 ## Coverage
 
+- Never add a section to reach a page count or to move a block onto another page. Fix
+  pagination in the layout, and treat the page budget as a ceiling, not a target.
+
 - The reader's background decides the examples and how much each idea needs
   explaining. It never decides coverage: a topic inside the agreed scope stays, even if
   the reader half knows it, when they need it for the work the book prepares them for.
@@ -54,7 +57,7 @@ parts, reading paths or lookup pages.
 
 ## The sample chapter
 
-Agree the outline with the user first. Then build one representative chapter end to
-end using the skill's lab, trust and typesetting rules: prose, a runnable exercise with
+Build one representative chapter from the agreed table of contents end to end, using
+the skill's lab, trust and typesetting rules: prose, a runnable exercise with
 its answer, a fact-check and a rendered PDF. Review it with the user, fix what the
 other chapters would inherit, and make it the writers' model chapter.

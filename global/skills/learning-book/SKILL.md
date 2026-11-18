@@ -27,6 +27,13 @@ reader runs exercises, and what the exercises must leave untouched. Agree whethe
 book is read on screen or printed. Ask which models you may use, for which roles, and
 the budget. Set the title, subtitle, and goal.
 
+The reader often doesn't know what the field holds, so don't ask them to design the
+book. After the first round, survey the territory yourself: the canonical sources, what
+changed recently, what practitioners struggle with. Then show the reader a map of it
+with a proposed chapter-level table of contents: each chapter's title, its takeaway,
+why it's in, its page budget, and what you would leave out and why. The grill ends when
+the reader has approved that table of contents. Sections come later, after research.
+
 Write the reader, their goals, the scope, any coverage promise (such as "replaces
 book X"), and the allowed models and budget in a plan file. It is the one source for
 every brief.
@@ -39,9 +46,9 @@ and quote other books only briefly, inside your own explanation.
 
 ## 2. Plan and write
 
-List the chapters and what the reader will be able to do after each one. Then work
-through `checklists/plan.md`, which ends with an outline review and one sample chapter
-built end to end. Draft the rest only after the user has reviewed that sample.
+Start from the table of contents the grill ended on. Work through `checklists/plan.md`,
+which ends with one sample chapter built end to end. Draft the rest only after the user
+has reviewed that sample.
 
 Teach prerequisites just before the reader needs them. Define each term at first use
 and keep its name consistent. Use the glossary for terms the reader will look up again.
