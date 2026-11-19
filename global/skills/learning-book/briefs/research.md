@@ -34,6 +34,10 @@ Only if this brief assigns them, in `<YOUR_LAB_PATHS>`:
 - Accuracy over volume. A wrong fact is worse than a missing one.
 - Fetch every page you quote; never quote from memory.
 
+When the brief asks for a ranking or a choice between options, give the worker the
+criteria and the lessons behind them, and name no candidates. A candidate named even as
+an example tilts the result toward it.
+
 ## Report additions
 
 Files written, open questions, and everything you could not verify.

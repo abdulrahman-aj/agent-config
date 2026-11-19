@@ -22,3 +22,6 @@ What to check:
 - The same idea isn't explained twice, and one concept keeps one name.
 - A section added later doesn't read as bolted on: it has a transition and sits where
   the argument needs it.
+- Every passage frames its subject the way the plan's scope statement does. Search for
+  the narrower framings that drift in, such as "the service" in a book about a whole
+  application, and judge each one against the plan.

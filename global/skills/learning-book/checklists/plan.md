@@ -8,6 +8,9 @@ drafting costs a pass over every chapter.
 Update the plan file first, then the title page, front matter, exercises and capstone
 wherever the old promise appears.
 
+Keep one scope statement in the plan, and say the same in the front matter. Front
+matter describes the book as it is; it never promises chapters that aren't written.
+
 ## Coverage
 
 - Never add a section to reach a page count or to move a block onto another page. Fix

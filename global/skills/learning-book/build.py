@@ -102,13 +102,27 @@ class Typst:
         self.book = book
         self.fit = {}
 
-    def compile(self, pdf, fit):
+    def compile(self, pdf, fit, final=False):
         # Queries must see the same spacing levels as the last compile, or their pages differ.
         self.fit = dict(fit)
-        subprocess.run(
+        out = subprocess.run(
             self.base + ["compile", *self.flags, *self.inputs(), self.book, str(pdf)],
-            check=True,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
         )
+        # A trial spacing level can leave the layout oscillating between two page breaks,
+        # and Typst warns that it did not converge. That trial is discarded or recompiled,
+        # so only the final compile's warnings matter, and there non-convergence is an error:
+        # the PDF's page numbers could disagree with its own references.
+        if out.returncode != 0 or final:
+            sys.stderr.write(out.stderr)
+        if out.returncode != 0:
+            raise SystemExit(f"typst compile failed with exit code {out.returncode}")
+        if final and "did not converge" in out.stderr:
+            raise SystemExit(
+                "the final compile did not converge; see the warnings above"
+            )
 
     def query(self, selector, *, field="value"):
         fields = ["--field", field] if field else []
@@ -147,7 +161,7 @@ def fit_chapters(typst, pdf):
                 fit[chapter] = max(history, key=history.get)
         if not changed:
             break
-    typst.compile(pdf, fit)
+    typst.compile(pdf, fit, final=True)
     return {k: v for k, v in fit.items() if v}
 
 

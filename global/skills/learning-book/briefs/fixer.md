@@ -29,6 +29,10 @@ agree with>`
 - Keep the author's voice. Don't hedge a claim the book can support ("may", "in some
   cases"), and don't cut an explanation to make a finding go away. If a paragraph has
   to go, say in the report what it taught and where that now lives.
+- After narrowing a claim, reread the whole paragraph and its neighbors: fix dangling
+  referents and choppy sentences, and rewrap to the source's line width.
+- Never resolve an unverified failure demonstration by deleting it. Make it replay, or
+  report the blocker.
 - Every new technical claim in your fix needs its own source or run.
 
 ## Proving a fix to a guarantee

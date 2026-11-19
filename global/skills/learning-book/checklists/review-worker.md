@@ -19,7 +19,14 @@ so check the work, not the report. Skip the steps that don't apply to what chang
    - explanations that were cut, and positions that were dropped;
    - mannered lines, recaps, and new terms for existing concepts;
    - paragraphs that open the same way, and sections with the same shape;
-   - new technical claims without a source or run, which cluster in new text.
+   - new technical claims without a source or run, which cluster in new text;
+   - structure chosen because it looks rigorous and then filled to fit: a table, a
+     then/now pair or a parallel list where deleting a column or item loses no answer
+     to a reader's question;
+   - a subject framed narrower or wider than the plan's scope statement ("a backend"
+     in a book about the whole app).
+
+   Then run `unslop` over every new passage, your own included, before it is committed.
 6. Ask whether the fix is the simplest correct one, and whether it reintroduces the bug
    in a new form. Rerun the original failure and nearby variants.
 7. When prose or figures changed, check every code fence and block is closed. Once the

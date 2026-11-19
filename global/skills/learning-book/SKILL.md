@@ -86,7 +86,9 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
    - a model from a different family than the writer fact-checks each chapter before
      you accept it, and each fix round's diff after;
    - a strong reasoning model, within the agreed budget, challenges risky designs
-     before they are built and checks the guarantees once labs run;
+     before they are built, checks the guarantees once labs run, and fact-checks each
+     new section before merge. On one book, cheaper fact-checkers passed sections in
+     which the strong model then found must-fix errors every round;
    - a blind reader from a different family reads the frozen PDF after each major
      revision.
 
@@ -172,6 +174,10 @@ input doesn't exist. Literal code such as `<sec-topic>` is not a field.
 | Fix review findings | `fixer.md` | After a review, for the findings you accept |
 | Draw diagrams | `diagram.md` | When a mechanism needs one |
 | Read the frozen PDF cold | `blind-read.md` | Each major revision |
+
+Some providers' safety filters block security teaching, such as a lab that shows a
+privilege escalation. A worker may also quietly drop such a demonstration. Use neutral
+names in those labs and briefs, and give that work to a model that accepts it.
 
 Give each worker files no other worker owns. Split a long review into page ranges, pin
 the revision, and track coverage until every range has a report; a worker's turn
