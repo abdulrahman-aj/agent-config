@@ -11,10 +11,9 @@ trigger below and follow the steps for that trigger.
 
 | Stage | Open |
 |---|---|
-| Planning, before any drafting, and whenever the plan changes | `checklists/plan.md` |
 | Before setting up or drafting the first lab, and before accepting a lab change | `checklists/labs.md` |
 | After every batch of changes, after drafting a part, and before a whole-book blind read | `checklists/flow.md` |
-| Briefing a worker | Section 7's role table and assembly rules |
+| Briefing a worker | Section 7, then that role's part of `traps.md` |
 | Accepting any worker's result | `checklists/review-worker.md` |
 | Before sending the user a checkpoint PDF, and before a release | `checklists/release.md` |
 
@@ -46,9 +45,55 @@ and quote other books only briefly, inside your own explanation.
 
 ## 2. Plan and write
 
-Start from the table of contents the grill ended on. Work through `checklists/plan.md`,
-which ends with one sample chapter built end to end. Draft the rest only after the user
-has reviewed that sample.
+Start from the table of contents the grill ended on, and settle the following before
+any drafting; each item added later costs a pass over every chapter.
+
+**Coverage.** The page budget is a ceiling. Never add a section to reach a page count
+or to move a block onto another page; fix pagination in the layout.
+
+- The reader's background decides the examples and how much each idea needs
+  explaining, never coverage. A topic inside the agreed scope stays when the reader
+  needs it for the work the book prepares them for, even if they half know it. Cut
+  repetition and padding, not needed topics.
+- Name what this book teaches that existing material doesn't, and check that each
+  chapter delivers part of it. An outline that would fit an older book on the topic
+  has missed the point.
+- If the book promises to replace or cover a source, list the source's ideas section
+  by section with where the book teaches each, its reasoning and limits, marked
+  covered, thin or out of scope. Repeat the audit after a restructure.
+- If the lessons should transfer across stacks, state each principle before its lab,
+  and show a second stack where it behaves differently.
+- Admit a new tool or topic only when you can name the reader's decision it teaches
+  and what the existing material can't show. Check claims about maturity or adoption.
+- List useful topics that lose on scope on a "what this book leaves out" page, each
+  with why it matters and one checked source.
+
+**Structure.** Scale it to the book: a short book read straight through needs no parts,
+reading paths or lookup pages.
+
+- Decide the parts, the reading paths for different goals, and the lookup pages (a
+  symptom index, a catalogue), each with its own heading and contents entry. Walk each
+  path and check it supplies the prerequisites it skips.
+- Decide which mechanisms get a diagram. Only real mechanisms do.
+- If the book rates or classifies things, write the rule for each verdict before the
+  first entry, and check every entry against it.
+- Give every table a title, every link text that names where it goes, and every heading
+  you will link to a label from the start.
+
+**Lab and book.** The book gives setup once, then the plain command the reader runs
+and the output that settles each point. The lab carries run modes, variants and
+detail: each lab's docstring gives its command, variants and book section, `lab/README`
+holds shared setup, and folders are named by topic (`ch05-lazy-load`, not `ch05`).
+
+**When the plan changes**, update the plan file first, then the title page, front
+matter, exercises and capstone wherever the old promise appears. Keep one scope
+statement in the plan and say the same in the front matter, which describes the book as
+it is and never promises chapters that aren't written.
+
+**Sample chapter.** Build one representative chapter end to end: prose, a runnable
+exercise with its answer, a fact-check and a rendered PDF. Review it with the user, fix
+what the other chapters would inherit, and make it the writers' model. Draft the rest
+only after that.
 
 Teach prerequisites just before the reader needs them. Define each term at first use
 and keep its name consistent. Use the glossary for terms the reader will look up again.
@@ -82,7 +127,7 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
 5. A guarantee (a lock holds, a retry is safe, a cache stays fresh) needs a
    reproduction that would fail without the mechanism, not an argument. This includes
    the guarantees in a worked design or a sample page, not only in the labs.
-6. Review in three ways, each with its brief from section 7:
+6. Review in three ways, each briefed per section 7:
    - a model from a different family than the writer fact-checks each chapter before
      you accept it, and each fix round's diff after;
    - a strong reasoning model, within the agreed budget, challenges risky designs
@@ -162,22 +207,20 @@ against the book, choose the fix that is best for the reader, and record the fin
 you decline and why. Never choose a fix because it is less work for you; between
 equally good fixes, take the simpler. Raise real budget or scope changes with the user.
 
-Build every brief from the templates in `briefs/`. Each one carries the traps that
-workers fell into on an earlier book, so a brief written from scratch repeats them.
-Start with `briefs/common.md` and add the role's brief. The blind read is the
-exception: it uses `blind-read.md` alone. Fill the fields in angle brackets that apply
-at this stage, delete fields and rules that don't apply, and write "none yet" where an
-input doesn't exist. Literal code such as `<sec-topic>` is not a field.
+Write each brief yourself: the task, the files the worker owns, its inputs (plan
+file, PDF, sources, the command that replays its chapter), how to wait on long jobs,
+and the report you want. Then add the traps for its role from `traps.md`; workers on an
+earlier book fell into each one.
 
-| Role | Brief | When |
-|---|---|---|
-| Research a chapter's sources, cases and lab drafts | `research.md` | Before writing a chapter |
-| Write a chapter, section or entry | `writer.md` | Drafting and additions |
-| Fact-check claims against sources | `fact-check.md` | Each chapter, then each fix round's diff |
-| Check that guarantees hold | `guarantee-review.md` | Before risky designs are built, once labs run, then each round's diff |
-| Fix review findings | `fixer.md` | After a review, for the findings you accept |
-| Draw diagrams | `diagram.md` | When a mechanism needs one |
-| Read the frozen PDF cold | `blind-read.md` | Each major revision |
+| Role | When |
+|---|---|
+| Research a chapter's sources, cases and lab drafts | Before writing a chapter |
+| Write a chapter, section or entry | Drafting and additions |
+| Fact-check claims against sources | Each chapter, then each fix round's diff |
+| Check that guarantees hold | Before risky designs are built, once labs run, then each round's diff |
+| Fix review findings | After a review, for the findings you accept |
+| Draw diagrams | When a mechanism needs one |
+| Read the frozen PDF cold | Each major revision |
 
 Some providers' safety filters block security teaching, such as a lab that shows a
 privilege escalation. A worker may also quietly drop such a demonstration. Name those
