@@ -1,52 +1,43 @@
 # Lab checklist
 
-Use this before setting up or drafting the first lab, and before accepting any lab change.
-
 ## Verification
 
-- `make verify` replays the printed commands and compares output and exit status. Labs
-  print one line per outcome so the book can quote output directly.
-- A fresh-clone run (`release.md` says when) uses fresh lab state and follows the
-  book's printed setup through the documented entry point, companion labs included.
-- Give replayed commands the environment a reader has after setup, and declare the
-  expected exit status of each intentional failure.
-- On a mismatch, save the command, exit status and raw output.
-- The verifier replays commands, not the instructions around them. Follow the printed
-  setup prose literally once, as a reader would, and fix any step that contradicts
-  another.
+- `make verify` replays every printed command and compares its output and exit status;
+  declare the expected status of each intentional failure. On a mismatch, save the
+  command, status and raw output: a "flake" was often a real difference nobody kept.
+- Replay commands the way the reader's setup does, through `make`, with `MAKELEVEL`
+  and `MAKEFLAGS` stripped. A nested make printed "Entering directory" lines that
+  failed only through make and looked like a flake.
+- Before a release, and after setup changes, verify from a fresh clone and a fresh
+  database cluster, following the book's printed setup, companion labs included.
+  Leftover state hid a broken setup step. Once, follow the setup prose by hand as a
+  reader would.
+- Keep the linters and type checkers editors run by default (such as ruff and
+  basedpyright standard) at zero, configured at the repository root, and run them and a
+  check that quoted code matches its lab file in `make verify`.
 
-## Code quality
+## Tests
 
-- Keep the linters and type checkers that editors run by default at zero findings, such
-  as ruff and basedpyright in standard mode for Python.
-- Put their configuration at the repository root, where an editor opening the
-  repository finds it.
-- Run them and the formatter check in `make verify`, and check that every code block
-  the book quotes still matches its lab file.
-
-## Guarantees and tests
-
-- A lab that proves a guarantee runs the breaking scenario. When it claims
-  convergence, that includes concurrent writers.
-- Make concurrency labs deterministic. Wait on observable state, such as a blocked
-  backend in `pg_stat_activity`, never on sleeps or thread timing. To force an
-  interleaving, drive both sessions step by step from one thread.
-- Test the lab's real code and show that the test fails with the mechanism removed.
-- The verifier checks printed transcripts. Tests assert behavior, including output only
-  where output is the interface.
-- Root-cause every flaky result.
+- Concurrency labs wait on observable state, such as a blocked backend in
+  `pg_stat_activity`, never on sleeps or thread liveness. To force an interleaving,
+  drive both sessions step by step from one thread.
+- A test calls the lab's real function, not its own SQL. Tests that ran their own SQL
+  passed on the old, wrong behavior.
+- Run the whole suite from a fresh database after each worker batch: files that pass
+  alone can fail together.
 - When a review reproduces a bug, keep the scenario as a regression test, and consider
-  turning it into an exercise.
+  making it an exercise.
 
 ## Parallel lab PRs
 
-- After merging one lab PR, rebase the others and rerun `make verify`. Shared
-  registrations (Makefile targets, verifier patterns) conflict, and shared schemas break
-  silently: a column made NOT NULL in one lab breaks another lab's insert.
+- After merging one, rebase the others and rerun `make verify`. Shared registrations
+  (Makefile targets, verifier patterns) conflict, and shared schemas break silently: a
+  column made `NOT NULL` in one lab broke another lab's insert.
 
 ## What the book prints
 
-- Keep printed code to the idea; the rest stays in the lab.
-- Don't print a short implementation as "the pattern" when it hides failure modes that
-  matter in production. Show what the lab demonstrates, list the hard parts as what to
-  demand of a library, and point to a maintained one.
+- Print the lines that make the point; the plumbing stays in the lab.
+- Don't print a short implementation as "the pattern" when real ones are large and
+  subtle (one real stale-while-revalidate library passed 300 lines). Show what the lab
+  demonstrates, list the hard parts as what to demand of a library, and point to a
+  maintained one.

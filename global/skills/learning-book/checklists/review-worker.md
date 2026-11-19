@@ -1,34 +1,20 @@
 # Reviewing a worker's result
 
-A checklist for whoever briefed the worker. Workers report success they didn't verify,
-so check the work, not the report. Skip the steps that don't apply to what changed.
+Workers report success they didn't verify. Check the work, not the report.
 
 1. Read changes to checks, tests, the verifier and build tools first. Reject any that
-   make a check pass instead of making the work correct. In a shared checkout, undo
-   only that worker's change.
+   make a check pass instead of making the work correct.
 2. Rerun every negative control yourself. It must revert only the mechanism under test
-   and fail for the reason the test claims.
-3. Remove tests that duplicate the verifier by asserting printed transcripts. Keep
-   tests of behavior.
-4. When labs changed, rerun the changed demonstrations with the verifier, then the
-   whole test suite from fresh state once per batch. Root-cause every failure; "flaky
-   under load" is not a cause.
-5. Read the prose diff line by line, not as a skim:
-   - sentences copied from the brief or spec;
-   - hedges that weaken a claim the book can support;
-   - explanations that were cut, and positions that were dropped;
-   - mannered lines, recaps, and new terms for existing concepts;
-   - paragraphs that open the same way, and sections with the same shape;
-   - new technical claims without a source or run, which cluster in new text;
-   - structure chosen because it looks rigorous and then filled to fit: a table, a
-     then/now pair or a parallel list where deleting a column or item loses no answer
-     to a reader's question;
-   - a subject framed narrower or wider than the plan's scope statement ("a backend"
-     in a book about the whole app).
-
-   Then run `unslop` over every new passage, your own included, before accepting the batch.
-6. Ask whether the fix is the simplest correct one, and whether it reintroduces the bug
+   and fail for the reason claimed. One crash test still passed with the kill removed,
+   because a client-side close released the lock first.
+3. Delete tests that assert printed transcripts; the verifier covers those.
+4. Rerun changed demonstrations with the verifier. Root-cause every failure: "flaky
+   under load" hid two real bugs in one round.
+5. Read new prose line by line. Cheaper writers produced mannered lines, recap
+   paragraphs and confident wrong asides; look also for sentences copied from the
+   brief, hedges on supportable claims, dropped explanations, and structure filled to
+   fit. Then run `unslop` over every new passage, your own included.
+6. Ask whether the fix is the simplest correct one and whether it reintroduces the bug
    in a new form. Rerun the original failure and nearby variants.
-7. When prose or figures changed, check every code fence and block is closed. Once the
-   whole batch has finished, build and read it with `flow.md`.
-8. Check the report's "edits needed elsewhere" and apply the ones you agree with.
+7. Check every code fence and block is closed, then build once the batch finishes.
+8. Apply the "edits needed elsewhere" from the report that you agree with.
