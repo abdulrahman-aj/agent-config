@@ -13,34 +13,37 @@ below, each an instance of one of these principles.
 
 1. **You own the book.** Workers and reviewers propose; nothing counts until you have
    checked it. Workers report success they didn't verify, so check the work, not the
-   report: read their changes to checks and tests first, and their prose line by line,
-   where cheaper writers left mannered lines, recaps and confident wrong asides. Choose
-   each fix on what is best for the reader, never on what is less work, and record the
-   findings you decline.
+   report: read their changes to checks and tests first, and their prose line by line;
+   cheaper writers leave mannered lines, recaps, hedged claims, dropped explanations and
+   confident wrong asides. Choose each fix on what is best for the reader, never on what
+   is less work, and record the findings you decline.
 2. **Nothing is true until it ran.** Print only output from a real run, trimmed but
-   never edited, including fragments in sentences and illustrative lines; labs print one
-   line per outcome so nothing needs editing. Check claims against primary sources at
-   the version the book names, and definitions against the original author. A guarantee
-   needs a reproduction that fails without the mechanism, in worked designs as well as
-   labs. A finding needs a reproduction or a source.
+   never edited, including fragments in sentences and illustrative lines such as a
+   plan's `Filter:`; labs print one line per outcome so nothing needs editing. Check
+   claims against primary sources at the version the book names, and definitions against
+   the original author. A guarantee needs a reproduction that fails without the
+   mechanism, in worked designs as well as labs; a convergence claim also runs
+   concurrent writers on the source side. A finding needs a reproduction or a source.
 3. **Strong models gate, cheaper ones filter.** Orchestrate with the strongest model the
    user allows (Opus or Sol). A cheaper orchestrator followed every rule and still
    produced a generic outline and a sample chapter that missed its takeaway. Cheaper
    fact-checkers passed sections in which Sol then found must-fix errors, every round,
-   clustered in the newest prose; so the strong model gates every new section and every
-   guarantee, and rechecks each fix round, because fixes break things nearby.
+   clustered in the newest prose; so the strong model checks each risky design before it
+   is built, gates every new section and guarantee, and rechecks each fix round with its
+   own earlier findings, because fixes break things nearby.
 4. **Fix the class, not the instance.** When a review finds a problem, name its class,
    search the book for siblings, and change the process that let it in.
 5. **The scope decides coverage.** One scope statement lives in the plan and the front
    matter, which describes the book as it is and never promises unwritten chapters. The
    reader's background sets examples and depth, never which needed topics stay; the page
-   budget is a ceiling; framing that drifts narrower ("the service" in a book about a
-   whole app) is a scope bug.
+   budget is a ceiling, and pagination is fixed in the layout, never with content;
+   framing that drifts narrower ("the service" in a book about a whole app) is a scope
+   bug.
 6. **Content before form.** A table, parallel list or heading chosen because it looks
    rigorous gets filled to fit. Keep a column or item only if deleting it loses an
    answer to a reader's question.
 7. **A worker repeats whatever its brief allows.** Briefs carry the traps below.
-8. **Isolate everything a worker touches**, and **verify the way the reader will**.
+8. **Isolate workers and verify the way the reader will.**
 
 ## Scope and plan
 
@@ -77,8 +80,7 @@ Run `unslop` over every new passage before committing it.
 
 ## Briefs
 
-Write each brief yourself, pointing at the plan file. These went wrong when a brief
-didn't say otherwise:
+Write each brief yourself. These went wrong when a brief didn't say otherwise:
 
 - Edit notes in a spec ("replace X with three sharper questions") end up in the prose.
   Write the spec as content, and search new prose for sentences from the brief.
@@ -89,9 +91,11 @@ didn't say otherwise:
   in shell scripts, they/them, no filler or recaps. List them in every brief.
 - Workers edit checks or tests to pass, add tests that assert printed transcripts,
   delete a failure demonstration they couldn't replay, and fix heavily (a
-  savepoint-and-retry loop where one `INSERT ... ON CONFLICT` did). Forbid each, and ask
-  for the smallest correct fix, checked for the same bug in a new form.
-- Narrowed claims get spliced in without rereading the paragraph. Require the reread.
+  savepoint-and-retry loop where one `INSERT ... ON CONFLICT` did). Forbid the first
+  three, have a hard demonstration replay or be reported, and ask for the smallest
+  correct fix, checked for the same bug in a new form.
+- Narrowed claims get spliced in without rereading. Require a reread of the paragraph
+  and its neighbors.
 - A provider's safety filter blocks security labs, and workers quietly drop them first.
   Name them neutrally, avoid trigger words, and route them to a model that accepts them,
   in a fresh context.
@@ -99,8 +103,6 @@ didn't say otherwise:
 - A whole-book review doesn't fit one turn: split it into page ranges at a pinned
   revision, ask for ranges not covered, and continue in one thread until all are done.
 
-If another agent started you, every turn you end wakes it: end one only for a real
-question or a finished stage, and block on your workers with the harness's wait.
 
 ## Isolation and verification
 
@@ -109,26 +111,28 @@ question or a finished stage, and block on your workers with the harness's wait.
   its own server when it reads server-wide state. Concurrent edits in one checkout broke
   the build mid-edit; other workers' open transactions stalled a snapshot horizon.
 - Stop processes by PID: `pkill -f <worktree>` also kills its PostgreSQL. Scratch copies
-  for negative controls filled `/tmp`; leave out `.venv` and database directories.
+  for negative controls filled `/tmp`; leave out `.venv`, database and companion
+  directories, and delete the copy afterwards.
 - No module-level environment changes in tests: one redirected every later test's
   subprocesses. Run the whole suite from a fresh database after each batch.
 - `make verify` replays every printed command, compares output and exit status, and
   saves the raw output of each mismatch. Replay through `make` with `MAKELEVEL` and
   `MAKEFLAGS` stripped, or nested make output looks like a flake. Root-cause every
   flake.
-- Concurrency labs wait on observable state (`pg_stat_activity`), never sleeps; drive
-  both sessions from one thread to force an interleaving. Tests call the lab's real
-  function, and a negative control reverts only the mechanism and fails for the claimed
-  reason, observed before teardown or retries could produce the outcome. Rerun every
-  control yourself: one passed with the kill removed because a client close freed the
-  lock.
+- Concurrency labs wait on observable state (`pg_stat_activity`), never sleeps or thread
+  liveness; drive both sessions from one thread to force an interleaving. Tests call the
+  lab's real function, and a negative control reverts only the mechanism and fails for
+  the claimed reason, observed before teardown or retries could produce the outcome.
+  Rerun every control yourself: one passed with the kill removed because a client close
+  freed the lock.
 - Editor-default linters (ruff, basedpyright standard) stay at zero from the repository
   root, and `make verify` checks that quoted code matches its lab file. After merging
   one lab PR, rebase the others and rerun: shared Makefile targets and schemas break.
 - Before a release, verify from a fresh clone and database cluster through the book's
   printed setup, companion labs included; leftover state hid a broken step.
 - Don't print a short implementation as "the pattern" when real ones are large and
-  subtle; show what the lab demonstrates and list what to demand of a library.
+  subtle; print the idea, not the plumbing, list what to demand of a library, and point
+  to a maintained one.
 
 ## Review and flow
 
@@ -138,10 +142,14 @@ after each major revision, and finds what informed readers miss (an unannounced 
 switch, an exercise before its rules). The book is done when every range is reviewed, no
 supported blocker or major finding remains, and the blind read has no "must fix".
 
-After every batch, build and read each changed section with its neighbors; before each
-blind read, read the whole book. Check that the running example keeps its names, each
-case is told once, exercises follow their rules, and the reader can do each chapter goal
-from the text.
+After every batch, check every code fence is closed, build, and read each changed
+section with its neighbors; before each blind read, read the whole book. Check that the
+running example keeps its names, each case is told once and each idea explained once
+under one name, framings match the plan's scope, exercises follow their rules, and the
+reader can do each chapter goal from the text.
+
+If another agent started you, every turn you end wakes it: end one only for a real
+question or a finished stage, and block on your workers with the harness's wait.
 
 ## Typeset
 
@@ -149,9 +157,10 @@ Write `book.typ` against this skill's `template.typ`; its header lists the inter
 `sample/book.typ` uses all of it. Keep SVG diagrams next to `book.typ` with quoted font
 names (`'Source Sans 3'`, `'Source Serif 4'`, `'JetBrains Mono'`). The template is
 screen-first; for print, change the copy beside `build.py` (the build overwrites the one
-next to `book.typ`). Label sections `== Heading <sec-topic>` and link with
-`#link(<sec-topic>)[Heading]`. In tables, `auto` only for short-label columns and `fr`
-for text: an `auto` column takes its longest cell and squeezes the rest.
+next to `book.typ`) and check binding margins. Label sections `== Heading <sec-topic>`
+and link with `#link(<sec-topic>)[Heading]`. In tables, `auto` only for short-label
+columns and `fr` for text: an `auto` column sizes to its longest cell and squeezes the
+rest.
 
 ```bash
 python3 <this skill>/build.py path/to/book.typ   # writes path/to/book.pdf
