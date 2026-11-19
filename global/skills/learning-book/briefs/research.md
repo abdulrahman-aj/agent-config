@@ -4,6 +4,10 @@ For a worker gathering sources, cases and lab drafts before a chapter is written
 the brief with `common.md`. The writer works from this pack, so a wrong fact here
 spreads.
 
+If the chapter needs a ranking or a choice between options, give the criteria and your
+reasons for them in the brief, and name no candidates. A candidate named even as an
+example tilts the result toward it.
+
 ---
 
 Build a research pack for `<CHAPTER>`, topic `<TOPIC>`. Don't write book prose. Write
@@ -33,10 +37,6 @@ Only if this brief assigns them, in `<YOUR_LAB_PATHS>`:
 
 - Accuracy over volume. A wrong fact is worse than a missing one.
 - Fetch every page you quote; never quote from memory.
-
-When the brief asks for a ranking or a choice between options, give the worker the
-criteria and the lessons behind them, and name no candidates. A candidate named even as
-an example tilts the result toward it.
 
 ## Report additions
 

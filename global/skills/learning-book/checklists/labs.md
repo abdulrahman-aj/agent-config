@@ -38,16 +38,11 @@ Use this before setting up or drafting the first lab, and before accepting any l
 - When a review reproduces a bug, keep the scenario as a regression test, and consider
   turning it into an exercise.
 
-## Parallel work
+## Parallel lab PRs
 
-- Give each worker writing prose or labs its own git worktree under a short path, such
-  as `~/Work/<repo>-wt12`. A PostgreSQL socket path longer than 107 bytes fails, and
-  deep scratch directories cross that.
-- Stop a worker's processes by PID, never with `pkill -f <worktree path>`: the pattern
-  also matches that worktree's database server.
-- After merging one PR, rebase the others and rerun `make verify`. Shared registrations
-  (Makefile targets, verifier patterns) conflict, and shared schemas break silently: a
-  column made NOT NULL in one lab breaks another lab's insert.
+- After merging one lab PR, rebase the others and rerun `make verify`. Shared
+  registrations (Makefile targets, verifier patterns) conflict, and shared schemas break
+  silently: a column made NOT NULL in one lab breaks another lab's insert.
 
 ## What the book prints
 

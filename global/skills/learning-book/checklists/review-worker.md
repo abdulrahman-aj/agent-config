@@ -26,7 +26,7 @@ so check the work, not the report. Skip the steps that don't apply to what chang
    - a subject framed narrower or wider than the plan's scope statement ("a backend"
      in a book about the whole app).
 
-   Then run `unslop` over every new passage, your own included, before it is committed.
+   Then run `unslop` over every new passage, your own included, before accepting the batch.
 6. Ask whether the fix is the simplest correct one, and whether it reintroduces the bug
    in a new form. Rerun the original failure and nearby variants.
 7. When prose or figures changed, check every code fence and block is closed. Once the

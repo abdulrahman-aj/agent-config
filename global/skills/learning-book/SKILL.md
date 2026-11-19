@@ -116,6 +116,10 @@ The template is screen-first. For a printed edition, change the copy beside `bui
 (the build overwrites the one next to `book.typ`) and check binding margins and chapter
 starts in the sample.
 
+In tables, use `auto` only for columns of short labels and give text columns `fr`
+weights: an `auto` column sizes to its longest cell and squeezes the others into
+one-word lines.
+
 Label sections you link to with `== Heading <sec-topic>`. In prose, link with
 `#link(<sec-topic>)[Heading]`. In glossary entries, pass `<sec-topic>` as the target.
 
@@ -176,10 +180,15 @@ input doesn't exist. Literal code such as `<sec-topic>` is not a field.
 | Read the frozen PDF cold | `blind-read.md` | Each major revision |
 
 Some providers' safety filters block security teaching, such as a lab that shows a
-privilege escalation. A worker may also quietly drop such a demonstration. Use neutral
-names in those labs and briefs, and give that work to a model that accepts it.
+privilege escalation. A worker may also quietly drop such a demonstration. Name those
+labs and their files neutrally, describe the technique in the brief without trigger
+words, and give that work to a model that accepts it.
 
-Give each worker files no other worker owns. Split a long review into page ranges, pin
+Give each worker files no other worker owns, and give each worker that runs a lab its
+own git worktree under a short path, such as `~/Work/<repo>-wt12`: a PostgreSQL socket
+path longer than 107 bytes fails, and deep scratch directories cross that. Stop a
+worker's processes by PID, never with `pkill -f <worktree path>`, which also matches
+that worktree's database server. Split a long review into page ranges, pin
 the revision, and track coverage until every range has a report; a worker's turn
 ending is not the review ending.
 

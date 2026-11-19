@@ -190,8 +190,10 @@ def main():
     shutil.copyfile(SKILL / "template.typ", book.parent / "template.typ")
     try:
         adjusted = fit_chapters(typst, pdf)
-    except subprocess.CalledProcessError:
-        sys.exit("typst failed; its error is above")
+    except subprocess.CalledProcessError as e:
+        # Only queries raise this; they capture stderr, so print it here.
+        sys.stderr.write(e.stderr or "")
+        sys.exit("typst query failed; its error is above")
     print(f"wrote {pdf}; spacing adjusted (chapter: level): {adjusted or 'none'}")
     sys.exit(check.run(pdf, typst))
 

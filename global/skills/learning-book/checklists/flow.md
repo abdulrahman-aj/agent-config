@@ -24,4 +24,5 @@ What to check:
   the argument needs it.
 - Every passage frames its subject the way the plan's scope statement does. Search for
   the narrower framings that drift in, such as "the service" in a book about a whole
-  application, and judge each one against the plan.
+  application, and judge each one against the plan. The worker review catches this per
+  diff; this read finds the framings that survived it.
