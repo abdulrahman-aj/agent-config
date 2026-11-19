@@ -6,9 +6,8 @@ its brief, in your own words; a brief written without them repeats the mistakes.
 ## Every worker except the blind reader
 
 - **Ownership.** Name the files the worker may edit. It reports changes that belong
-  elsewhere with the exact text instead of making them. It never edits checks, the
-  verifier, build tools or tests to make its output pass; if one looks wrong, it stops
-  and reports. It doesn't commit, push or rebuild the PDF unless told to.
+  elsewhere with the exact text instead of making them. It never edits checks, the verifier, build tools or tests to make its output pass,
+  except work the brief assigns; if one looks wrong, it stops and reports. It doesn't commit, push or rebuild the PDF unless told to.
 - **Inputs.** Point it at the plan file first: every sentence it adds serves one of the
   plan's goals. Give the current PDF for page references and the primary sources. It
   reads large texts with `grep -n` and `sed -n` ranges, never prints them whole and
@@ -17,9 +16,10 @@ its brief, in your own words; a brief written without them repeats the mistakes.
   when a probe depends on server-wide state (system views, replication, settings).
   Environment changes are scoped to the test or subprocess that needs them, never set
   at module level.
-- **Evidence.** The trust rules (SKILL.md section 3) and lab rules (`labs.md`) apply
-  as written; workers break them first by quoting output they didn't run and by
-  citing memory as a source. Every source goes in the report.
+- **Evidence.** Copy the trust rules (SKILL.md section 3) and the lab rules (`labs.md`) into the
+  brief; workers break them first by quoting output they didn't run and by citing
+  memory as a source. It runs the checks its assignment affects, and every source goes
+  in the report.
 - **Voice.** Match the model chapter: plain, direct, takes positions. No em dashes or
   dashes made of other characters, no filler, recaps or announcements. Use the
   glossary's terms, and they/them for people. No Python or other languages embedded
@@ -31,22 +31,26 @@ its brief, in your own words; a brief written without them repeats the mistakes.
   copies, drops its databases and stops its servers, keeping any handoff file.
 - **Report.** One final message: what changed as `file:line` and why it is correct, the
   verification run and its result, edits needed in files it doesn't own, disagreements
-  with the brief and their evidence, and unfinished checks with the blocker.
+  with the brief and their evidence, unfinished checks with the blocker and the last known result, and open questions.
 
 ## Research
 
 - When the chapter needs a ranking or a choice between options, give the criteria and
   your reasons and name no candidates. A candidate named even as an example tilts the
   result toward it.
-- The pack, written to a handoff file, has for each idea what the primary source says
-  it is for, how it works, when to use it and its warnings, with the exact location;
-  how current tools at named versions implement or replace it, each with a URL or a
-  run; real public cases with URLs and checked facts, unverified ones marked; and
-  surprising behaviors, each with a run's output.
+- The pack, written to a handoff file, has:
+  - for each idea, what the primary source says it is for, how it works, when to use
+    it and its warnings, with the exact location, quoting exactly only where the
+    wording matters;
+  - how current tools at named versions implement or replace it, each with a URL or a
+    run;
+  - real public cases with URLs and checked facts, unverified ones marked;
+  - surprising behaviors, each with a run's output.
 - It fetches every page it quotes. Accuracy beats volume: the writer works from the
   pack, so a wrong fact spreads.
-- Lab drafts print one line per outcome and never change shared lab modules; new models
-  go in the worker's own module with names that can't collide.
+- Lab drafts are small scripts, one behavior each, printing one line per outcome. They
+  never change shared lab modules; new data models go in the worker's own module with
+  names that can't collide.
 
 ## Writer
 
@@ -62,34 +66,31 @@ its brief, in your own words; a brief written without them repeats the mistakes.
   an approved chapter), labels every new heading, uses glossary terms and reports new
   ones with one-line definitions.
 - It checks every code fence and Typst block it opened is closed.
-- A build failing in a file it doesn't own gets reported, never fixed.
+- A build failing in a file it doesn't own gets reported, never fixed. It retries only
+  when it knows another worker is mid-edit there.
 
 ## Fact-checker
 
 - Scope it to one chapter or one fix round's diff. Include changed labs and the
-  unchanged passages that depend on what changed; a prose diff alone hides what it
-  breaks. List the tools and versions the book names and the claims you already doubt.
+  unchanged passages that depend on what changed; a prose-only diff hides what a lab change breaks. List the tools and versions the book names and the claims you already doubt.
 - It checks quotes word for word and in context, tool claims by running code, reading
   source or fetching the docs at the named version, printed output by replaying it,
   definitions against the original author (the book's own terms too, across chapter,
-  catalogue, glossary and exercises), every recall answer and verdict, universals, and
-  text that is misleading though literally true.
+  catalogue, glossary and exercises), every recall answer and verdict, universals, text that is misleading though literally true, positions stated as fact, and
+  contradictions with the rest of the book.
 - It covers the whole scope instead of stopping at the first problems, and says what it
-  didn't reach. Each problem gets a verdict (WRONG, MISLEADING, UNVERIFIABLE), evidence
-  and a fix.
+  didn't reach. Each problem gets a verdict (WRONG, MISLEADING, UNVERIFIABLE), evidence and a fix,
+  followed by a short list of claims checked and found correct.
 
 ## Guarantee reviewer
 
 - Use it before a risky design is built (what interleaving, crash or retry breaks it,
   and what would you observe), once the lab runs (reproduce those scenarios), and after
-  each fix round: fixes create new races near the old ones, so send the diff and its own
-  earlier findings back to the same reviewer.
+  each fix round, because fixes create new races near the old ones.
 - Worked designs and sample pages carry guarantees too, not only labs.
 - A finding counts only with a reproduction or a cited primary source. It reports
   BLOCKER and MAJOR only, leaves prose and flow alone, and says "none" when nothing
   meets the bar.
-- A whole book takes several turns: give each a page range and the pinned revision, and
-  track coverage until every range has a report.
 
 ## Fixer
 
@@ -99,12 +100,12 @@ its brief, in your own words; a brief written without them repeats the mistakes.
 - A finding is a claim. It checks each one first and reports, with evidence, the ones
   it disagrees with.
 - It picks the smallest correct fix that keeps the teaching (one atomic statement beats
-  a retry loop around several), prefers replacing text to adding it, and checks the fix
+  a retry loop around several), prefers replacing text to adding it, keeps the chapter about the same length, and checks the fix
   for the same class of bug in a new form.
 - It never hedges a claim the book can support and never cuts an explanation to make a
   finding go away. If a paragraph goes, it says what the paragraph taught and where
   that now lives. After narrowing a claim it rereads the whole paragraph and its
-  neighbors for dangling referents and choppy sentences.
+  neighbors for dangling referents and choppy sentences, and rewraps to the source's line width.
 - It never resolves an unverified failure demonstration by deleting it: it makes it
   replay or reports the blocker.
 - A fixed guarantee gets a regression test that calls the lab's real function, runs the
@@ -119,11 +120,12 @@ its brief, in your own words; a brief written without them repeats the mistakes.
   width and maximum height taken from the template.
 - For each diagram, name the section and the lab run or source behind it. It draws only
   what that evidence shows: no icons, decoration or title inside the SVG.
-- Fonts are the template's, quoted (`'Source Sans 3'`, `'JetBrains Mono'`). Every label
-  sits inside its box with margin.
+- Fonts are the template's, quoted. Every label sits inside its box with margin, and no
+  text crosses a line.
 - It renders each file at twice its width and looks at the image before finishing:
   `nix shell nixpkgs#librsvg -c rsvg-convert -w <2x width> file.svg -o out.png`.
-  It reports what backs each event and value, and a sentence-case caption.
+  It reports what backs each event, value and order, a sentence-case caption, and
+  anything in the text that disagreed with the lab.
 
 ## Blind reader
 
@@ -136,7 +138,11 @@ its brief, in your own words; a brief written without them repeats the mistakes.
   across the range boundaries yourself.
 - It looks for order (an idea used before it is taught), coherence (contradictions, a
   case told twice, a running example that changes, a bolted-on section, a wrong page
-  reference), pacing, prose that slows the reader, teaching (trivia recall, exercises
-  that miss the point, output that doesn't show the claim) and layout.
-- It separates "must fix" from "taste", gives the PDF page and quoted phrase for each,
+  reference), pacing (sections too long or thin for what they teach, material in the wrong
+  chapter), prose that slows the reader (padding, recaps, mannered phrasing, one concept
+  under several names, text that sounds machine-written), teaching (trivia recall,
+  exercises that miss the point, output that doesn't show the claim) and layout
+  (diagrams unreadable at page size, squeezed table columns, headings stranded at a
+  page bottom, blank or half-empty pages).
+- It separates "must fix" from "taste", gives for each the PDF page, the quoted phrase, the problem and a concrete fix,
   and lists the pages it read closely, skimmed and didn't reach.

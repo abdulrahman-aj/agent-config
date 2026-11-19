@@ -77,13 +77,14 @@ reading paths or lookup pages.
 - Decide which mechanisms get a diagram. Only real mechanisms do.
 - If the book rates or classifies things, write the rule for each verdict before the
   first entry, and check every entry against it.
-- Give every table a title, every link text that names where it goes, and every heading
+- Give every table a title, every link text that names where it goes (an unlabeled link reads as part
+of whatever sits next to it), and every heading
   you will link to a label from the start.
 
 **Lab and book.** The book gives setup once, then the plain command the reader runs
 and the output that settles each point. The lab carries run modes, variants and
-detail: each lab's docstring gives its command, variants and book section, `lab/README`
-holds shared setup, and folders are named by topic (`ch05-lazy-load`, not `ch05`).
+detail: each lab's docstring gives its command, variants and book section, `lab/README` holds shared setup, and folders are named by topic (`ch05-lazy-load`, not
+`ch05`). Add a markdown file per lab only for depth the book lacks.
 
 **When the plan changes**, update the plan file first, then the title page, front
 matter, exercises and capstone wherever the old promise appears. Keep one scope
@@ -127,7 +128,7 @@ One wrong fact makes the reader doubt every other page, so every claim gets chec
 5. A guarantee (a lock holds, a retry is safe, a cache stays fresh) needs a
    reproduction that would fail without the mechanism, not an argument. This includes
    the guarantees in a worked design or a sample page, not only in the labs.
-6. Review in three ways, each briefed per section 7:
+6. Review in three ways, each briefed as section 7 describes:
    - a model from a different family than the writer fact-checks each chapter before
      you accept it, and each fix round's diff after;
    - a strong reasoning model, within the agreed budget, challenges risky designs
@@ -209,8 +210,7 @@ equally good fixes, take the simpler. Raise real budget or scope changes with th
 
 Write each brief yourself: the task, the files the worker owns, its inputs (plan
 file, PDF, sources, the command that replays its chapter), how to wait on long jobs,
-and the report you want. Then add the traps for its role from `traps.md`; workers on an
-earlier book fell into each one.
+and the report you want. Then add the traps for its role from `traps.md`.
 
 | Role | When |
 |---|---|
@@ -229,7 +229,7 @@ words, and give that work to a model that accepts it.
 
 Give each worker files no other worker owns, and give each worker that runs a lab its
 own git worktree under a short path, such as `~/Work/<repo>-wt12`: a PostgreSQL socket
-path longer than 107 bytes fails, and deep scratch directories cross that. Stop a
+path longer than 107 bytes fails, and deep scratch directories exceed it. Stop a
 worker's processes by PID, never with `pkill -f <worktree path>`, which also matches
 that worktree's database server. Split a long review into page ranges, pin
 the revision, and track coverage until every range has a report; a worker's turn
@@ -241,5 +241,4 @@ for a real question (scope, behavior, cost, reversibility) or a stage ready for
 review. While workers run, block on them with your harness's wait (in T3,
 `t3_thread_wait` with `untilDelegatedWorkSettled`, repeated on timeout), even when a
 tool suggests ending your turn. With parallel workers, wait on each in turn; one that
-already finished returns at once. To act on early finishers, cycle through them with
-a short timeout. Decide everything else yourself.
+already finished returns at once. To act on early finishers, cycle through them with a short wait timeout. Decide everything else yourself.
