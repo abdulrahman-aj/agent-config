@@ -24,9 +24,9 @@ they must not touch, screen or print, and which models may do which roles at wha
 budget.
 
 The reader usually doesn't know what the field holds, so don't ask them to design the
-book. After the first round, survey the field yourself and propose a chapter-level
-table of contents: each chapter's takeaway, why it's in, its page budget, and what you
-leave out. The grill ends when the reader approves it.
+book. After the first round, survey the field yourself and propose a chapter-level table
+of contents: each chapter's takeaway, why it's in, its page budget, and what you leave
+out. The grill ends when the reader approves it.
 
 Write a plan file with the reader, goals, models and one scope statement; every brief
 points at it. The front matter states the same scope and describes the book as it is,
@@ -34,16 +34,17 @@ never promising unwritten chapters. Prose drifts narrower than the scope ("the s
 in a book about a whole app), so judge framings against that statement.
 
 Give each book a private repository with `book/` and `lab/`, and land changes through
-PRs. If the book might be shared, describe its reader as a group and quote other books
-only briefly, inside your own explanation.
+PRs. The PDF ships as a release asset, and source material never enters the repository.
+If the book might be shared, describe its reader as a group and quote other books only
+briefly, inside your own explanation.
 
 ## 2. Plan
 
 Settle these before drafting; each one added later costs a pass over every chapter.
 
-- **Coverage comes from the scope.** The reader's background decides examples and
-  depth, never which needed topics stay. The page budget is a ceiling: never add a
-  section to fill pages or to move a block, and fix pagination in the layout.
+- **Coverage comes from the scope.** The reader's background decides examples and depth,
+  never which needed topics stay. The page budget is a ceiling: never add a section to
+  fill pages or to move a block, and fix pagination in the layout.
 - **Say what's new.** Name what this book teaches that existing material doesn't. An
   outline that would fit an older book on the topic has missed the point.
 - **Audit promises.** A book that replaces a source lists the source's ideas section by
@@ -54,31 +55,29 @@ Settle these before drafting; each one added later costs a pass over every chapt
   material can't show. Topics that lose on scope go on a "what this book leaves out"
   page, each with one checked source.
 - **Content before form.** A table, then/now pair, parallel list or heading chosen
-  because it looks rigorous gets filled to fit. Keep a column or item only if deleting it
-  loses an answer to a reader's question. Name verdict labels after their test (Apply,
-  Built in, Obsolete), not as praise; write the rule for each verdict before the first
-  entry.
+  because it looks rigorous gets filled to fit. Keep a column or item only if deleting
+  it loses an answer to a reader's question. Name verdict labels after their test
+  (Apply, Built in, Obsolete), not as praise; write the rule for each verdict before the
+  first entry.
 - **Label early.** Give every heading you will link to a label from the start.
   Retrofitting 34 labels cost a full pass.
 - **Lab and book.** The book gives setup once, then the command the reader runs and the
-  output that settles the point; the lab carries modes, variants and detail. Name lab
-  folders by topic (`ch05-lazy-load`). Add a markdown file per lab only for depth the
-  book lacks.
+  output that settles the point; the lab carries modes, variants and detail. Each lab's
+  docstring gives its command, variants and book section, `lab/README` holds shared
+  setup, and folders are named by topic (`ch05-lazy-load`). Add a markdown file per lab
+  only for depth the book lacks.
 - **Sample chapter.** Build one chapter end to end (prose, exercise, fact-check, PDF),
   review it with the user, and draft the rest from it.
 
-Teach a prerequisite inside the first chapter that needs it. Show a real case and let
-the reader judge before the verdict. Recall questions test decisions, with answers at
-the chapter end. Take positions and name what they cost. Run `unslop` over every new
-passage before you commit it.
+Run `unslop` over every new passage before you commit it.
 
 ## 3. Trust
 
 One wrong fact makes the reader doubt every page.
 
 1. Print only output from a real run, trimmed but never edited. That covers fragments
-   quoted in sentences and illustrative lines such as a plan's `Filter:`. Labs print
-   one line per outcome so the book never needs to edit output.
+   quoted in sentences and illustrative lines such as a plan's `Filter:`. Labs print one
+   line per outcome so the book never needs to edit output.
 2. Check claims against primary sources at the version the book names, and definitions
    against the original author. A definition that bakes in one implementation is wrong
    for the next reader. State the book's own choices as choices.
@@ -94,20 +93,23 @@ One wrong fact makes the reader doubt every page.
    - a blind reader from another family reads the frozen PDF after each major revision.
      It finds what informed readers miss: an unannounced schema switch, an exercise
      before its rules, a story split across a chapter.
-5. Show real mistakes and what they cost. When the book covers a system you built, its
-   costs sit next to its wins.
+
+   Every correctness finding needs a reproduction or a source. The book is done when
+   every planned range has been reviewed, no supported blocker or major finding remains,
+   and the blind read has no "must fix" left.
 
 ## 4. Typeset
 
 Write `book.typ` against this skill's `template.typ`. The template header lists the
 interface and `sample/book.typ` uses all of it. Keep SVG diagrams next to `book.typ`
-with quoted font names: `'Source Sans 3'`, `'Source Serif 4'`, `'JetBrains Mono'`.
-The template is screen-first; for print, change the copy beside `build.py` and check
-binding margins.
+with quoted font names: `'Source Sans 3'`, `'Source Serif 4'`, `'JetBrains Mono'`. The
+template is screen-first; for print, change the copy beside `build.py` (the build
+overwrites the one next to `book.typ`) and check binding margins.
 
 Label sections as `== Heading <sec-topic>` and link with `#link(<sec-topic>)[Heading]`.
-In tables, use `auto` only for short-label columns and give text columns `fr` weights:
-an `auto` column sizes to its longest cell and squeezes the rest into one-word lines.
+Point glossary and catalogue entries at sections, not chapters. In tables, use `auto`
+only for short-label columns and give text columns `fr` weights: an `auto` column sizes
+to its longest cell and squeezes the rest into one-word lines.
 
 ```bash
 python3 <this skill>/build.py path/to/book.typ   # writes path/to/book.pdf
@@ -147,7 +149,8 @@ What workers got wrong, and what each brief therefore says:
 - **Placement.** Parallel workers put their sections where their own brief suits, not
   where the chapter's argument needs them. Name each section's neighbors.
 - **Style rules.** A companion lab's script embedded Python because its brief didn't
-  forbid it. Every brief, lab ones included, carries the code and prose style rules.
+  forbid it. Every brief, lab ones included, carries the style rules: no em dashes, no
+  other languages embedded in shell scripts, they/them for people, no filler or recaps.
 - **Passing by editing.** Workers edit checks or tests to make their output pass, and
   add tests that assert printed transcripts the verifier already checks. Forbid both
   unless the brief assigns test work.
@@ -160,7 +163,8 @@ What workers got wrong, and what each brief therefore says:
   choppy sentences, overlong lines. The fixer rereads the paragraph and its neighbors.
 - **Safety filters.** A provider's filter blocked a privilege-escalation lab, and a
   worker had quietly dropped the demonstration before that. Name such labs neutrally,
-  describe the technique without trigger words, and route it to a model that accepts it.
+  describe the technique without trigger words, and route it to a model that accepts it,
+  in a fresh context so the flagged text is gone.
 - **Unfinished turns.** Cheaper workers ended their turn while their builds and
   sub-agents still ran. Tell them to wait, and verify their work yourself.
 
@@ -183,5 +187,5 @@ range has a report.
 
 If another agent started you, every turn you end wakes it. End a turn only for a real
 question or a stage ready for review. While workers run, block on them with the
-harness's wait (in T3, `t3_thread_wait` with `untilDelegatedWorkSettled`, repeated on
-timeout), even when a tool suggests ending your turn.
+harness's blocking wait, repeated on timeout, even when a tool suggests ending your
+turn.

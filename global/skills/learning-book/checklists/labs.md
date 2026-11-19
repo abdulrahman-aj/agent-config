@@ -5,9 +5,9 @@
 - `make verify` replays every printed command and compares its output and exit status;
   declare the expected status of each intentional failure. On a mismatch, save the
   command, status and raw output: a "flake" was often a real difference nobody kept.
-- Replay commands the way the reader's setup does, through `make`, with `MAKELEVEL`
-  and `MAKEFLAGS` stripped. A nested make printed "Entering directory" lines that
-  failed only through make and looked like a flake.
+- Replay commands the way the reader's setup does, through `make`, with `MAKELEVEL` and
+  `MAKEFLAGS` stripped. A nested make printed "Entering directory" lines that failed
+  only through make and looked like a flake.
 - Before a release, and after setup changes, verify from a fresh clone and a fresh
   database cluster, following the book's printed setup, companion labs included.
   Leftover state hid a broken setup step. Once, follow the setup prose by hand as a
@@ -25,8 +25,6 @@
   passed on the old, wrong behavior.
 - Run the whole suite from a fresh database after each worker batch: files that pass
   alone can fail together.
-- When a review reproduces a bug, keep the scenario as a regression test, and consider
-  making it an exercise.
 
 ## Parallel lab PRs
 
