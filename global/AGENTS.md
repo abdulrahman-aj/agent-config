@@ -31,6 +31,7 @@
 # Workflow
 * **Dev environments.** Use the project's Nix dev shell, or add one if none exists.
 * **Reusable tasks.** Do repeatable work through deterministic scripts (for example interact, debug, verify) and expose new ones through the Makefile or similar. Reuse existing scripts before writing new ones.
+* **File locations.** Never write to the top level of `~`. Logs and evidence go under the worktree's `out/`, reusable data under `~/.local/share/<project>/`, caches under `~/.cache/<project>/`, and scratch in the session scratchpad. Delete scratch when done.
 * **Delegate** for speed, cost or expertise. Brief fully, including how to verify, what is already known and the open questions. Load the `orchestrate` skill before you delegate through T3.
 * **Delegated work.** If another agent started you:
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
