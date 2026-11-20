@@ -167,6 +167,20 @@ def overflow(boxes, geometry):
     return found
 
 
+def stray_marks(texts):
+    """Two slips that build cleanly and read as typos.
+
+    Typst's smart quote turns ' after a digit into a prime ("chapter 8′s"); write ’ in
+    prose instead. A period followed by a colon is what cutting a sentence before a
+    listing leaves behind when the cut sentence ended in a colon.
+    """
+    found = []
+    for index, text in enumerate(texts):
+        for match in re.finditer(r"\S*(?:\u2032|\.:(?=\s|$))\S*", text):
+            found.append(f'page {index + 1}: stray mark in "{match.group()}"')
+    return found
+
+
 def page_fills(boxes, geometry):
     top, bottom = geometry["top"], geometry["height"] - geometry["bottom"]
     fills = []
@@ -204,12 +218,13 @@ def run(pdf, typst):
     for line in outside[:20]:
         print("  ", line)
     problems += outside
+    problems += stray_marks(texts)
 
     # Short pages, with the reason each is expected.
     fills = page_fills(boxes, geometry)
     chapter_ends = {p["page"] for p in probes}
     # The title and contents end where they end; the contents may run to several pages.
-    front = min(c["page"] for c in chapters) - 1
+    front = min(p["opener"] for p in probes) - 1
     print("pages less than half full:")
     short = 0
     for index, fill in enumerate(fills):

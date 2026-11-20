@@ -30,7 +30,9 @@ below, each an instance of one of these principles.
    fact-checkers passed sections in which Sol then found must-fix errors, every round,
    clustered in the newest prose; so the strong model checks each risky design before it
    is built, gates every new section and guarantee, and rechecks each fix round with its
-   own earlier findings, because fixes break things nearby.
+   own earlier findings, because fixes break things nearby. For judgment work (which
+   ideas recur, what to name them) run a strong pass beside the cheap one, not after it:
+   a cheap sweep anchors the answer.
 4. **Fix the class, not the instance.** When a review finds a problem, name its class,
    search the book for siblings, and change the process that let it in.
 5. **The scope decides coverage.** One scope statement lives in the plan and the front
@@ -69,11 +71,26 @@ Before drafting, since anything added later costs a pass over every chapter:
   losers go on a "what this book leaves out" page with a checked source.
 - Label every heading you will link to from the start (retrofitting 34 cost a pass), and
   point glossary and catalogue entries at sections. Name verdict labels after their test
-  (Apply, Obsolete), and write each verdict's rule before the first entry.
+  (Apply, Obsolete), and write each verdict's rule before the first entry. Each entry
+  says when the verdict holds and what evidence would flip it; a column of bare "Apply"
+  reads as a prescription.
+- Decide the teaching devices book-wide before drafting. A prediction prompt may have
+  its output right below it, but nothing above the output may hint at the answer,
+  including a comment in the snippet. Recurring ideas get a map (first met, named,
+  called back) that a script checks against chapter order; each callback gives a reason,
+  and more than about four in a chapter read as slogans. A section's rule is its plain
+  first sentence, never a labelled opener repeated in every section.
 - The book gives setup once, then the command and the output that settles each point;
   the lab holds modes and detail. Each lab's docstring gives its command and book
   section, `lab/README` holds shared setup, folders are named by topic. Add a markdown
-  file per lab only for depth the book lacks.
+  file per lab only for depth the book lacks. Before moving a case to the lab, ask
+  whether a chapter goal needs it; after moving it, diff the guards left in the book
+  against the original (a trim once dropped two) and reread every later sentence that
+  relied on it.
+- Each listing contains the case its section is about (a retry loop was once printed
+  without its `40001` arm). Never split one function across snippet regions: the second
+  half loses its indentation. Rebuild after any change to region code, since a rename
+  can push a line past the margin.
 - Build one sample chapter end to end and review it with the user before the rest.
 
 Run `unslop` over every new passage before committing it.
@@ -142,11 +159,27 @@ after each major revision, and finds what informed readers miss (an unannounced 
 switch, an exercise before its rules). The book is done when every range is reviewed, no
 supported blocker or major finding remains, and the blind read has no "must fix".
 
+Reviewers optimize what they are asked to check, so correctness rounds pull a book
+toward a spec. When a reviewer finds a gap in a worked example, narrow the claim before
+extending the example. When each round's findings land in the previous round's
+additions, re-cut the scope instead of fixing again.
+
+Compare two versions blind: random labels, no description of the change, randomized
+order, ties allowed. A primed comparison once returned a unanimous verdict that proved
+nothing. A fresh-context Opus reader caught book-wide defects that twelve cheap readers
+missed. Ask cheap goal readers to quote the passage that should have taught what they
+call missing, after searching the book for it: three in four such claims were answered a
+page earlier.
+
 After every batch, check every code fence is closed, build, and read each changed
 section with its neighbors; before each blind read, read the whole book. Check that the
 running example keeps its names, each case is told once and each idea explained once
 under one name, framings match the plan's scope, exercises follow their rules, and the
 reader can do each chapter goal from the text.
+
+Commit before starting a reviewer, since a reviewer reading a live branch sees
+half-applied fixes. Keep each worker's full task ID in a notes file: truncated IDs left
+two finished reviews unread for hours.
 
 If another agent started you, every turn you end wakes it: end one only for a real
 question or a finished stage, and block on your workers with the harness's wait.
@@ -160,14 +193,16 @@ screen-first; for print, change the copy beside `build.py` (the build overwrites
 next to `book.typ`) and check binding margins. Label sections `== Heading <sec-topic>`
 and link with `#link(<sec-topic>)[Heading]`. In tables, `auto` only for short-label
 columns and `fr` for text: an `auto` column sizes to its longest cell and squeezes the
-rest.
+rest. Keep long inline code out of `#question` prompts: the stretched line pushes the
+answer link onto a line of its own, where the check can't match it.
 
 ```bash
 python3 <this skill>/build.py path/to/book.typ   # writes path/to/book.pdf
 ```
 
 The build fetches Typst, fonts and Poppler from nixpkgs, reduces short chapter endings,
-and fails on broken answer pages, links, labels and horizontal overflow; it can't see
+and fails on broken answer pages, links, labels, horizontal overflow, primes printed
+for apostrophes after digits, and a stray `.:` left by a cut sentence; it can't see
 vertical overflow or inside diagrams. After changing the template or checker, confirm a
 deliberately broken link still fails. Render every page and look at reading size (a
 squeezed table passed a 50 dpi contact sheet):

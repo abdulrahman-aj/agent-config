@@ -122,6 +122,10 @@
 #let in-box = state("in-box", false)
 #let code-blocks = counter("code-block")
 
+// How many spaces a line starts with, so a wrapped line can hang past its own indent.
+// Spaces only: tabs would need their rendered width.
+#let leading-spaces(line) = line.len() - line.trim(" ", at: start).len()
+
 // A terminal transcript: the prompt in grey, the command in full ink, output in a lighter
 // grey, ">> " lines in blue. A command ending in "\" continues on the next line.
 #let terminal-rows(source) = {
@@ -132,22 +136,25 @@
   for line in source.split("\n") {
     if continued or line.starts-with("$ ") {
       let (prompt, cmd) = if continued { ("", line) } else { ("$ ", line.slice(2)) }
-      rows.push((styled(faint, prompt) + styled(ink, weight: 600, cmd), true))
+      rows.push((styled(faint, prompt) + styled(ink, weight: 600, cmd), true, 0))
       continued = line.ends-with("\\")
     } else if line.starts-with(">> ") {
-      rows.push((styled(blue, weight: 600, line.slice(3)), false))
+      rows.push((styled(blue, weight: 600, line.slice(3)), false, 0))
     } else {
-      rows.push((styled(rgb("#56616f"), line), false))
+      rows.push((styled(rgb("#56616f"), line), false, leading-spaces(line)))
     }
   }
   rows
 }
 
-// Each source line is its own paragraph, so a wrapped line hangs under its first
-// character. Long blocks may break across pages but never leave fewer than three lines
-// on either side or a command apart from its first output line, and the part on the new
-// page carries a small "continued" mark. `rows` holds (line, keep-with-next) pairs.
+// Each source line is its own paragraph, so a wrapped line can hang four characters past
+// the line's own indent; a fixed hang reads as a dedent under an indented line. Long
+// blocks may break across pages but never leave fewer than three lines on either side
+// or a command apart from its first output line, and the part on the new page carries
+// a small "continued" mark. `rows` holds (line, keep-with-next, indent) triples, the
+// indent counted in characters.
 #let code-block(rows) = {
+  let code-size = 7.5pt
   let long = rows.len() >= 7
   // Only long blocks can break, so only they get the mark. Each of their lines carries a
   // label, and a line whose page differs from the previous line's page gets the mark.
@@ -166,7 +173,9 @@
           text(hyphenate: false, caps([continued], size: 5.6pt, fill: faint, weight: 600))))
       }
     }
-    let line(i, (row, keep)) = block(spacing: 0.56em, sticky: keep, breakable: false, par({
+    // JetBrains Mono advances 0.6 em per character.
+    let line(i, (row, keep, indent)) = block(spacing: 0.56em, sticky: keep, breakable: false,
+      par(hanging-indent: (indent + 4) * 0.6 * code-size, {
       if long {
         if i > 0 { mark(i) }
         [#metadata(none)#tag(i)]
@@ -177,10 +186,10 @@
     block(width: 100%, above: block-gap, below: block-gap, breakable: long,
       fill: if in-box.get() { none } else { code-tint },
       inset: (x: 8pt, y: 8pt), stroke: (left: 1.6pt + rule), {
-        set par(justify: false, leading: 0.56em, spacing: 0.56em, hanging-indent: 2.5em,
+        set par(justify: false, leading: 0.56em, spacing: 0.56em,
           linebreaks: "simple", first-line-indent: 0pt)
         set text(hyphenate: false)
-        show raw: set text(size: 7.5pt)
+        show raw: set text(size: code-size)
         if long {
           block(breakable: false, spacing: 0.56em, lines.slice(0, 3).join())
           lines.slice(3, -3).join()
@@ -212,7 +221,7 @@
   set block(spacing: block-gap)
 
   show raw.where(block: true): it => code-block(
-    if it.lang == "terminal" { terminal-rows(it.text) } else { it.lines.map(l => (l.body, false)) })
+    if it.lang == "terminal" { terminal-rows(it.text) } else { it.lines.map(l => (l.body, false, leading-spaces(l.text))) })
 
   show heading: set text(font: sans, fill: ink, hyphenate: false)
   show heading: set par(justify: false)
@@ -376,7 +385,9 @@
   answers.update(())
   // The first numbered chapter starts the arabic page numbers at 1.
   context if numbered and counter(heading).get().first() == 0 { counter(page).update(1) }
-  context [#metadata((numbered: numbered, page: here().page())) <chapter-open>]
+  // No page in the value: every folio and running head queries this marker, so a value that
+  // moves with the layout costs a pass each time and can keep the book from converging.
+  [#metadata((numbered: numbered)) <chapter-open>]
   let h = heading(level: 1, numbering: if numbered { "1" } else { none }, title)
   if label != none [#h#label] else { h }
 
@@ -448,7 +459,9 @@
   let color = if disposable { ochre } else { blue }
   let edge = if disposable { (paint: color, thickness: 0.8pt, dash: (3pt, 2pt)) } else { 0.8pt + color }
   in-box.update(true)
-  block(width: 100%, above: 2.4 * unit, below: 2.4 * unit, breakable: true,
+  // Unbreakable: a reader works an exercise as one set of instructions, and a box split
+  // mid-sentence across a page turn hides half of them. Keep each exercise under a page.
+  block(width: 100%, above: 2.4 * unit, below: 2.4 * unit, breakable: false,
     fill: if disposable { ochre-tint } else { blue-tint },
     inset: (x: 10pt, top: 9pt, bottom: 11pt), stroke: (top: edge, bottom: edge), {
       block(below: unit, sticky: true, {
