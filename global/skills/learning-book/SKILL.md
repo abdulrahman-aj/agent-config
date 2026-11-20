@@ -22,7 +22,8 @@ below, each an instance of one of these principles.
    illustrate; labs print one line per outcome so nothing needs editing. Check claims
    against primary sources at the version the book names, and definitions against the
    original author. A guarantee needs a reproduction that fails without the mechanism,
-   in worked designs as well as labs. A finding needs a reproduction or a source.
+   in worked designs as well as labs; a claim that concurrent writes converge also runs
+   concurrent writers on the source side. A finding needs a reproduction or a source.
 3. **Strong models gate, cheaper ones filter.** Orchestrate with the strongest model the
    user allows (Opus or Sol). A cheaper orchestrator followed every rule and still
    produced a generic outline and a sample chapter that missed its takeaway. Cheaper
@@ -102,9 +103,9 @@ Write each brief yourself. These went wrong when a brief didn't say otherwise:
   in shell scripts, they/them, no filler or recaps. List them in every brief.
 - Workers edit checks or tests to pass, add tests that assert printed transcripts,
   delete a failure demonstration they couldn't replay, and fix heavily (a retry loop
-  where one statement did). Forbid the first three, have a hard demonstration replay or
-  be reported, and ask for the smallest correct fix, checked for the same bug in a new
-  form.
+  where one atomic statement did). Forbid the first three, have a hard demonstration
+  replay or be reported, and ask for the smallest correct fix, checked for the same bug
+  in a new form.
 - Narrowed claims get spliced in without rereading. Require a reread of the paragraph
   and its neighbors.
 - A provider's safety filter blocks security labs, and workers quietly drop them first.
@@ -131,19 +132,19 @@ Write each brief yourself. These went wrong when a brief didn't say otherwise:
   `MAKEFLAGS` stripped, or nested make output looks like a flake. Root-cause every
   flake.
 - Concurrency labs wait on observable state, never on sleeps or thread liveness, and
-  force each interleaving deterministically. Tests call the lab's real function, and a
-  negative control reverts only the mechanism and fails for the claimed reason, observed
-  before teardown or retries could produce the outcome. Rerun every control yourself:
-  one passed with the kill removed because a client close freed the lock. Set up the
-  case only the claimed mechanism stops: a test that a weaker mechanism would also pass
-  proves nothing.
+  force each interleaving deterministically, driving both sides from one thread. Tests
+  call the lab's real function, and a negative control reverts only the mechanism and
+  fails for the claimed reason, observed before teardown or retries could produce the
+  outcome. Rerun every control yourself: one passed with the kill removed because a
+  client close freed the lock. Set up the case only the claimed mechanism stops: a test
+  that another mechanism would also pass proves nothing.
 - Each listing contains the case its section is about (a retry loop was once printed
   without the branch that retries). Never split one function across snippet regions:
   the second half loses its indentation. Rebuild the PDF after any change to region
   code, since a rename can push a line past the margin.
 - Linters at their editor defaults stay at zero from the repository root, and
   `make verify` checks that quoted code matches its lab file. After merging one lab PR,
-  rebase the others and rerun: shared build targets and schemas break.
+  rebase the others and rerun: shared build targets and fixtures break.
 - Before a release, verify from a fresh clone and fresh state through the book's
   printed setup, companion labs included; leftover state hid a broken step.
 - Don't print a short implementation as the real thing when real ones are large and
@@ -154,9 +155,10 @@ Write each brief yourself. These went wrong when a brief didn't say otherwise:
 
 Review three ways: a different family fact-checks each chapter and fix diff; the strong
 model gates as in principle 3; a blind reader from another family reads the frozen PDF
-after each major revision, and finds what informed readers miss (an unannounced schema
-switch, an exercise before its rules). The book is done when every range is reviewed, no
-supported blocker or major finding remains, and the blind read has no "must fix".
+after each major revision, and finds what informed readers miss (an unannounced switch
+of the running example, an exercise before its rules). The book is done when every range
+is reviewed, no supported blocker or major finding remains, and the blind read has no
+"must fix".
 
 Reviewers optimize what they are asked to check, so correctness rounds pull a book
 toward a spec. When a reviewer finds a gap in a worked example, narrow the claim before
