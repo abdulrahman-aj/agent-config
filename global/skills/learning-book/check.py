@@ -1,7 +1,8 @@
 """Mechanical checks of a typeset book; build.py runs them after every build.
 
 Fails on missing answers, incorrect answer page numbers or link destinations, misplaced
-section labels, and horizontal text overflow in the body area.
+section labels, horizontal text overflow in the body area, a prime printed after a
+digit, and a stray ".:" after a word.
 Reports without failing: counts, pages less than half full with the likely reason, and
 pages that end well short of the bottom while their chapter continues. Read the report;
 an "unexpected" short page usually means a block too tall to fit was pushed to the next.
@@ -176,7 +177,9 @@ def stray_marks(texts):
     """
     found = []
     for index, text in enumerate(texts):
-        for match in re.finditer(r"\S*(?:\u2032|\.:(?=\s|$))\S*", text):
+        # Only after a digit (a prime after a letter can be a derivative), and only a
+        # word of two or more letters before ".:", so "e.g.:", "1.:" and "...:" pass.
+        for match in re.finditer(r"\S*(?:\d\u2032|\b[A-Za-z]{2,}\.:(?=\s|$))\S*", text):
             found.append(f'page {index + 1}: stray mark in "{match.group()}"')
     return found
 

@@ -74,12 +74,14 @@ Before drafting, since anything added later costs a pass over every chapter:
   (Apply, Obsolete), and write each verdict's rule before the first entry. Each entry
   says when the verdict holds and what evidence would flip it; a column of bare "Apply"
   reads as a prescription.
-- Decide the teaching devices book-wide before drafting. A prediction prompt may have
-  its output right below it, but nothing above the output may hint at the answer,
-  including a comment in the snippet. Recurring ideas get a map (first met, named,
-  called back) that a script checks against chapter order; each callback gives a reason,
-  and more than about four in a chapter read as slogans. A section's rule is its plain
-  first sentence, never a labelled opener repeated in every section.
+- Decide the teaching devices book-wide before drafting; per-chapter choices drift.
+  A prediction prompt that worked lets the output follow it directly, with nothing
+  above the output hinting at the answer, including a comment in the snippet; blind
+  readers flagged every prompt whose answer was already stated above it. A section's rule is its plain first sentence, never a labelled opener
+  repeated in every section.
+- Recurring ideas get a map that a script checks: each is first met without a name,
+  then named, then called back, in that chapter order. Each callback gives a reason;
+  more than about four callbacks in one chapter, across all ideas, read as slogans.
 - The book gives setup once, then the command and the output that settles each point;
   the lab holds modes and detail. Each lab's docstring gives its command and book
   section, `lab/README` holds shared setup, folders are named by topic. Add a markdown
@@ -87,10 +89,6 @@ Before drafting, since anything added later costs a pass over every chapter:
   whether a chapter goal needs it; after moving it, diff the guards left in the book
   against the original (a trim once dropped two) and reread every later sentence that
   relied on it.
-- Each listing contains the case its section is about (a retry loop was once printed
-  without its `40001` arm). Never split one function across snippet regions: the second
-  half loses its indentation. Rebuild after any change to region code, since a rename
-  can push a line past the margin.
 - Build one sample chapter end to end and review it with the user before the rest.
 
 Run `unslop` over every new passage before committing it.
@@ -141,7 +139,12 @@ Write each brief yourself. These went wrong when a brief didn't say otherwise:
   lab's real function, and a negative control reverts only the mechanism and fails for
   the claimed reason, observed before teardown or retries could produce the outcome.
   Rerun every control yourself: one passed with the kill removed because a client close
-  freed the lock.
+  freed the lock. Set up the case only the claimed mechanism stops: a "one live ticket"
+  test that a per-order index would also pass proves nothing.
+- Each listing contains the case its section is about (a retry loop was once printed
+  without its `40001` arm). Never split one function across snippet regions: the second
+  half loses its indentation. Rebuild the PDF after any change to region code, since a rename
+  can push a line past the margin.
 - Editor-default linters (ruff, basedpyright standard) stay at zero from the repository
   root, and `make verify` checks that quoted code matches its lab file. After merging
   one lab PR, rebase the others and rerun: shared Makefile targets and schemas break.
@@ -166,8 +169,9 @@ additions, re-cut the scope instead of fixing again.
 
 Compare two versions blind: random labels, no description of the change, randomized
 order, ties allowed. A primed comparison once returned a unanimous verdict that proved
-nothing. A fresh-context Opus reader caught book-wide defects that twelve cheap readers
-missed. Ask cheap goal readers to quote the passage that should have taught what they
+nothing. For book-wide defects, add one fresh-context Opus reader: it caught two that twelve
+cheap readers missed. Opus subagents can't write files, so ask for the report in the
+reply. Ask cheap goal readers to quote the passage that should have taught what they
 call missing, after searching the book for it: three in four such claims were answered a
 page earlier.
 
@@ -178,7 +182,7 @@ under one name, framings match the plan's scope, exercises follow their rules, a
 reader can do each chapter goal from the text.
 
 Commit before starting a reviewer, since a reviewer reading a live branch sees
-half-applied fixes. Keep each worker's full task ID in a notes file: truncated IDs left
+half-applied fixes. Keep each worker's full task ID in `book/out/reviews/task-ids.md`: truncated IDs left
 two finished reviews unread for hours.
 
 If another agent started you, every turn you end wakes it: end one only for a real
