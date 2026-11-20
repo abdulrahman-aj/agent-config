@@ -18,12 +18,11 @@ below, each an instance of one of these principles.
    confident wrong asides. Choose each fix on what is best for the reader, never on what
    is less work, and record the findings you decline.
 2. **Nothing is true until it ran.** Print only output from a real run, trimmed but
-   never edited, including fragments in sentences and illustrative lines such as a
-   plan's `Filter:`; labs print one line per outcome so nothing needs editing. Check
-   claims against primary sources at the version the book names, and definitions against
-   the original author. A guarantee needs a reproduction that fails without the
-   mechanism, in worked designs as well as labs; a convergence claim also runs
-   concurrent writers on the source side. A finding needs a reproduction or a source.
+   never edited, including fragments quoted in sentences and lines shown only to
+   illustrate; labs print one line per outcome so nothing needs editing. Check claims
+   against primary sources at the version the book names, and definitions against the
+   original author. A guarantee needs a reproduction that fails without the mechanism,
+   in worked designs as well as labs. A finding needs a reproduction or a source.
 3. **Strong models gate, cheaper ones filter.** Orchestrate with the strongest model the
    user allows (Opus or Sol). A cheaper orchestrator followed every rule and still
    produced a generic outline and a sample chapter that missed its takeaway. Cheaper
@@ -70,18 +69,15 @@ Before drafting, since anything added later costs a pass over every chapter:
   it behaves differently. Admit a tool only for a decision existing material can't show;
   losers go on a "what this book leaves out" page with a checked source.
 - Label every heading you will link to from the start (retrofitting 34 cost a pass), and
-  point glossary and catalogue entries at sections. Name verdict labels after their test
-  (Apply, Obsolete), and write each verdict's rule before the first entry. Each entry
-  says when the verdict holds and what evidence would flip it; a column of bare "Apply"
-  reads as a prescription.
+  point glossary entries at sections. If the book rates options, name each label after
+  its test, never a praise word, write each label's rule before the first entry, and
+  have every rating say when it holds and what evidence would change it; unconditional
+  ratings read as prescriptions.
 - Decide the teaching devices book-wide before drafting; per-chapter choices drift.
-  A prediction prompt that worked lets the output follow it directly, with nothing
-  above the output hinting at the answer, including a comment in the snippet; blind
-  readers flagged every prompt whose answer was already stated above it. A section's rule is its plain first sentence, never a labelled opener
-  repeated in every section.
-- Recurring ideas get a map that a script checks: each is first met without a name,
-  then named, then called back, in that chapter order. Each callback gives a reason;
-  more than about four callbacks in one chapter, across all ideas, read as slogans.
+  Nothing before an exercise's answer may give it away, a comment in the code included;
+  blind readers flagged every prompt whose answer was already in view above it. A
+  section's rule is its plain first sentence, never a labelled opener repeated in every
+  section.
 - The book gives setup once, then the command and the output that settles each point;
   the lab holds modes and detail. Each lab's docstring gives its command and book
   section, `lab/README` holds shared setup, folders are named by topic. Add a markdown
@@ -105,10 +101,10 @@ Write each brief yourself. These went wrong when a brief didn't say otherwise:
 - Workers don't know the user's style rules: no em dashes, no other languages embedded
   in shell scripts, they/them, no filler or recaps. List them in every brief.
 - Workers edit checks or tests to pass, add tests that assert printed transcripts,
-  delete a failure demonstration they couldn't replay, and fix heavily (a
-  savepoint-and-retry loop where one `INSERT ... ON CONFLICT` did). Forbid the first
-  three, have a hard demonstration replay or be reported, and ask for the smallest
-  correct fix, checked for the same bug in a new form.
+  delete a failure demonstration they couldn't replay, and fix heavily (a retry loop
+  where one statement did). Forbid the first three, have a hard demonstration replay or
+  be reported, and ask for the smallest correct fix, checked for the same bug in a new
+  form.
 - Narrowed claims get spliced in without rereading. Require a reread of the paragraph
   and its neighbors.
 - A provider's safety filter blocks security labs, and workers quietly drop them first.
@@ -122,35 +118,35 @@ Write each brief yourself. These went wrong when a brief didn't say otherwise:
 ## Isolation and verification
 
 - Each worker owns its files. Each lab worker gets a git worktree under a short path
-  (`~/Work/<repo>-wt12`; PostgreSQL sockets fail past 107 bytes), its own database, and
-  its own server when it reads server-wide state. Concurrent edits in one checkout broke
-  the build mid-edit; other workers' open transactions stalled a snapshot horizon.
-- Stop processes by PID: `pkill -f <worktree>` also kills its PostgreSQL. Scratch copies
-  for negative controls filled `/tmp`; leave out `.venv`, database and companion
-  directories, and delete the copy afterwards.
+  (`~/Work/<repo>-wt12`; Unix socket paths fail past about 107 bytes), and its own
+  database and server when the lab uses them. Concurrent edits in one checkout broke the
+  build mid-edit, and workers sharing a server interfered through server-wide state.
+- Stop processes by PID: `pkill -f <worktree>` also kills servers started from it.
+  Scratch copies for negative controls filled `/tmp`; leave out dependency caches, data
+  directories and build output, and delete the copy afterwards.
 - No module-level environment changes in tests: one redirected every later test's
-  subprocesses. Run the whole suite from a fresh database after each batch.
+  subprocesses. Run the whole suite from fresh state after each batch.
 - `make verify` replays every printed command, compares output and exit status, and
   saves the raw output of each mismatch. Replay through `make` with `MAKELEVEL` and
   `MAKEFLAGS` stripped, or nested make output looks like a flake. Root-cause every
   flake.
-- Concurrency labs wait on observable state (`pg_stat_activity`), never sleeps or thread
-  liveness; drive both sessions from one thread to force an interleaving. Tests call the
-  lab's real function, and a negative control reverts only the mechanism and fails for
-  the claimed reason, observed before teardown or retries could produce the outcome.
-  Rerun every control yourself: one passed with the kill removed because a client close
-  freed the lock. Set up the case only the claimed mechanism stops: a "one live ticket"
-  test that a per-order index would also pass proves nothing.
+- Concurrency labs wait on observable state, never on sleeps or thread liveness, and
+  force each interleaving deterministically. Tests call the lab's real function, and a
+  negative control reverts only the mechanism and fails for the claimed reason, observed
+  before teardown or retries could produce the outcome. Rerun every control yourself:
+  one passed with the kill removed because a client close freed the lock. Set up the
+  case only the claimed mechanism stops: a test that a weaker mechanism would also pass
+  proves nothing.
 - Each listing contains the case its section is about (a retry loop was once printed
-  without its `40001` arm). Never split one function across snippet regions: the second
-  half loses its indentation. Rebuild the PDF after any change to region code, since a rename
-  can push a line past the margin.
-- Editor-default linters (ruff, basedpyright standard) stay at zero from the repository
-  root, and `make verify` checks that quoted code matches its lab file. After merging
-  one lab PR, rebase the others and rerun: shared Makefile targets and schemas break.
-- Before a release, verify from a fresh clone and database cluster through the book's
+  without the branch that retries). Never split one function across snippet regions:
+  the second half loses its indentation. Rebuild the PDF after any change to region
+  code, since a rename can push a line past the margin.
+- Linters at their editor defaults stay at zero from the repository root, and
+  `make verify` checks that quoted code matches its lab file. After merging one lab PR,
+  rebase the others and rerun: shared build targets and schemas break.
+- Before a release, verify from a fresh clone and fresh state through the book's
   printed setup, companion labs included; leftover state hid a broken step.
-- Don't print a short implementation as "the pattern" when real ones are large and
+- Don't print a short implementation as the real thing when real ones are large and
   subtle; print the idea, not the plumbing, list what to demand of a library, and point
   to a maintained one.
 
@@ -169,9 +165,9 @@ additions, re-cut the scope instead of fixing again.
 
 Compare two versions blind: random labels, no description of the change, randomized
 order, ties allowed. A primed comparison once returned a unanimous verdict that proved
-nothing. For book-wide defects, add one fresh-context Opus reader: it caught two that twelve
-cheap readers missed. Opus subagents can't write files, so ask for the report in the
-reply. Ask cheap goal readers to quote the passage that should have taught what they
+nothing. For book-wide defects, add one fresh-context Opus reader: it caught two that
+twelve cheap readers missed. Opus subagents can't write files, so ask for the report in
+the reply. Ask cheap goal readers to quote the passage that should have taught what they
 call missing, after searching the book for it: three in four such claims were answered a
 page earlier.
 
@@ -182,8 +178,8 @@ under one name, framings match the plan's scope, exercises follow their rules, a
 reader can do each chapter goal from the text.
 
 Commit before starting a reviewer, since a reviewer reading a live branch sees
-half-applied fixes. Keep each worker's full task ID in `book/out/reviews/task-ids.md`: truncated IDs left
-two finished reviews unread for hours.
+half-applied fixes. Keep each worker's full task ID in `book/out/reviews/task-ids.md`:
+truncated IDs left two finished reviews unread for hours.
 
 If another agent started you, every turn you end wakes it: end one only for a real
 question or a finished stage, and block on your workers with the harness's wait.
