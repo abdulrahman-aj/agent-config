@@ -1,10 +1,10 @@
 ---
-name: learning-book
+name: study-book
 disable-model-invocation: true
-description: Write a personal learning book and typeset it as a PDF. Use when someone wants long material they will study and act on, such as a book, a course, or an owner's manual; not for short docs, READMEs or single pages.
+description: Write a personal study book and typeset it as a PDF. Use when someone wants long material they will study and act on, such as a book, a course, or an owner's manual; not for short docs, READMEs or single pages.
 ---
 
-# Learning book
+# Study book
 
 You know how to write, teach and review. Earlier books still went wrong in the ways
 below, each an instance of one of these principles.

@@ -29,7 +29,7 @@ check: check-prereqs
 test: check-prereqs
 	@bash tests/test-deploy.sh
 	@python3 tests/test-agent-wait.py
-	@python3 tests/test-learning-book.py
+	@python3 tests/test-study-book.py
 
 uninstall:
 	@if [ -d "$(TARGET)" ] && $(HAS_HOST); then $(HOST_STOW) -D "$(HOST)"; fi

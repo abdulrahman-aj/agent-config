@@ -4,7 +4,7 @@ from collections import Counter
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'global/skills/learning-book'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'global/skills/study-book'))
 from check import check_answers
 
 
