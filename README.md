@@ -37,6 +37,9 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 
 Native directories remain real, so separately installed skills coexist.
 
+T3 runs Gemini through its Antigravity provider using the `agy` CLI (`binaryPath` in T3 settings), which dotfiles
+installs with the other harnesses. On a new machine, sign in with Google (AI Pro) once in T3's Antigravity provider settings.
+
 `~/.claude/settings.json` is plain JSON, so its reasons live here. It compacts at 400k (about 367k in practice)
 instead of the ~967k default, because every request re-reads the whole context, and pins the 1-hour prompt cache.
 Leave `subagentPromptCacheTtl` unset: T3 would apply it to delegate children, whose cache would then expire during
