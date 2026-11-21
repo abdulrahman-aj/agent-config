@@ -7,7 +7,7 @@ trap 'rm -rf "$scratch"' EXIT
 export XDG_CACHE_HOME="$scratch/cache"
 checkout="$scratch/checkout with spaces"
 target="$scratch/home with spaces"
-roots=(.agents .claude .config/opencode)
+roots=(.agents .claude .config/opencode .gemini/config)
 record_key="$(printf '%s' "$target" | cksum | cut -d' ' -f1)"
 record_is() { [[ "$(cat "$XDG_CACHE_HOME/agent-config/repo.$record_key")" == "$(realpath "$checkout")" ]]; }
 
@@ -64,7 +64,7 @@ printf 'updated instructions\n' > "$checkout/global/replacement.md"
 mv "$checkout/global/replacement.md" "$checkout/global/AGENTS.md"
 mkdir "$checkout/global/skills/example/references"
 printf 'resource\n' > "$checkout/global/skills/example/references/new.md"
-for path in .agents/AGENTS.md .codex/AGENTS.md .claude/CLAUDE.md .config/opencode/AGENTS.md; do
+for path in .agents/AGENTS.md .codex/AGENTS.md .claude/CLAUDE.md .config/opencode/AGENTS.md .gemini/AGENTS.md; do
     grep -qx 'updated instructions' "$target/$path" || fail "instruction edit is not live"
 done
 for root in "${roots[@]}"; do
