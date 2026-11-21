@@ -173,4 +173,11 @@ make -s -C "$checkout" uninstall TARGET="$scratch/nonexistent" >/dev/null
 [[ ! -e "$scratch/nonexistent" ]] || fail "check or uninstall created the missing target"
 [[ ! -L "$target/.config/environment.d/60-agent-heavy-jobs.conf" ]] || fail "host link remains"
 
+# A fresh home has none of the harness directories yet; install must create them.
+fresh="$scratch/fresh home"
+mkdir "$fresh"
+make -s -C "$checkout" install TARGET="$fresh" HOST=zenbook-dux >/dev/null
+[[ "$(realpath "$fresh/.gemini/config/skills/example")" == "$checkout/global/skills/example" ]] \
+    || fail "skill not linked into a fresh home"
+
 echo "Agent Stow deployment test passed"

@@ -40,7 +40,7 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 Native directories remain real, so separately installed skills coexist.
 
 T3 runs Gemini through its Antigravity provider. `binaryPath: agy` makes it use the `agy` CLI that dotfiles installs
-with the other harnesses, instead of a runtime T3 downloads. T3 gives `agy` a private profile, so `agy login` in a
+with the other harnesses, instead of a runtime T3 downloads. T3 gives `agy` a private profile, so signing in from a
 terminal doesn't sign T3 in: sign in once per machine in T3's Antigravity provider settings. T3 0.1.11 or newer is
 needed for that profile to pick up `~/.gemini/AGENTS.md` and for sign-in on a headless host such as msi-dux.
 
