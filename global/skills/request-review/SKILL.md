@@ -27,8 +27,8 @@ find alone:
 ## Act on the findings
 
 * Judge severity yourself; reviewers rate high. A blocker causes serious harm or makes the
-  central claim false. A major gives a user a wrong outcome, breaks a stated behavior or
-  rejects a correct alternative.
+  central claim false. A major gives a user who follows the work a wrong outcome, breaks a
+  stated behavior or rejects a correct alternative.
 * Verify a reasoned-only finding by running it when a run is cheap.
 * Fix every real blocker and major, the minors you agree with and the suggestions you
   accept. Accepted suggestions join the spec.
