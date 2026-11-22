@@ -81,8 +81,7 @@ The verdict is PASS when sections 2 and 3 hold no blocker or major. Suggestions 
 
 ## Cheap reviews of delegated work
 
-A worker whose task changed files gets up to two reviews before it returns, from low-cost
-models in the model table whose family differs from its own. Run them on the worker's own
+The global agent instructions say when a worker gets these. Run them on the worker's own
 checkout, or after a commit, so they see the exact diff. Brief them as this skill
 describes. They catch mechanical slips: house rules, a sentence the change made false, a
 deleted comment, edits beyond the task, a test that rejects the project's own pattern.

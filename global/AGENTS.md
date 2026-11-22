@@ -37,7 +37,7 @@
   * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
   * Every line you touch or print follows the project's rules, even in a minimal change. Change only what the task needs, and report anything else you notice.
-  * If your task changed files, get up to two reviews from low-cost models in other families before you return, as the `review` skill describes. Apply what you agree with. If no such model is available, say so.
+  * If your task changed the project's files and isn't a review, get up to two reviews from low-cost models in other families before you return, as the `review` skill describes. Apply what you agree with. If no such model is available, say so.
   * When you return changes, end with: what you changed per item (file:line), what you ran and what it showed, the review findings you rejected and why, and what still worries you.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
 * **Porting.** Document omissions and divergences in the target repository.
