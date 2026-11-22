@@ -37,12 +37,12 @@
   * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
   * Every line you touch or print follows the project's rules, even in a minimal change. Change only what the task needs, and report anything else you notice.
-  * Delegate only reviews, and only to low-cost models in the model table. The orchestrator alone starts implementers and strong gates.
+  * Delegate only reviews, and only to low-cost models in the model table; reviewers never delegate. The orchestrator alone starts implementers and strong gates.
   * If your task changed the project's files and isn't a review, get up to two reviews from low-cost models in other families before you return, as the `request-review` skill describes. Apply what you agree with.
   * When you return changes, end with: what you changed per item (file:line), what you ran and what it showed, the review findings you rejected and why, and what still worries you.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
 * **Porting.** Document omissions and divergences in the target repository.
-* **Review.** Before the user sees work, a different model family reviews it (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus or Neon). Check YAGNI first.
+* **Review.** Before the user sees work, it gets reviewed, and every reviewer comes from a different model family than the author (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus or Neon). Check YAGNI first.
 * **PRs only.** Land work through PRs. Never push to main or rewrite history.
 
 # Model selection
