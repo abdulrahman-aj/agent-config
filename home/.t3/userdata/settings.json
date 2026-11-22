@@ -34,6 +34,7 @@
   "idleCompaction": "onReturn",
   "autoResumeLimitedThreads": true,
   "linkedEnvironmentsEnabled": true,
+  "sidebarAutoSettleOnMerge": false,
   "defaultTheme": "omarchy",
   "defaultThemeSetAt": "2026-10-16T18:15:17.100Z",
   "providerInstances": {
