@@ -49,9 +49,9 @@ Use the cheapest model that is smart enough for the task. Use only these:
 |---|---|---|---|---|---|
 | Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | Architect: design, grilling, orchestration and review. Top-level only, never a delegate. | highest | high |
 | Sol 6.2 | `gpt-6.2-sol` (Codex) | `high` | Foundational implementation and hard reasoning | highest | high |
-| Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research, scoped tasks and reviews | high | low |
-| Gemini 4 Neon | `gemini-4-neon` (Antigravity) | `high` | Reviews (a third model family, so it reviews Opus and Sol work), prose and scoped implementation | highest | low (AI Pro quota) |
-| GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Fallback and second reviewer | high | low |
+| Gemini 4 Neon | `gemini-4-neon` (Antigravity) | `high` | Reviews (a third model family, so it reviews Opus and Sol work), prose and scoped implementation | highest | high |
+| Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research, scoped tasks and reviews | medium | low |
+| GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Fallback and second reviewer | medium | low |
 
 # Fleet
 
