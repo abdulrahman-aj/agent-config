@@ -19,17 +19,18 @@ can't find alone:
 * **Settled findings.** List the findings that earlier review rounds rejected, each with its
   reason. Leave out what a worker rejected from its own cheap reviews; the reviewer judges
   those afresh.
-* **Scope.** A first review covers the whole change. A re-check after fixes judges only the
-  new diff and whether the earlier findings are fixed, and reruns everything mechanical:
-  every test, every known failure case and every correct alternative.
+* **Scope.** A first review covers the whole change. For a re-check, name the fix commit
+  and list the earlier findings; the `review` skill says what a re-check covers.
 * **Reviewer.** A different model family than the author's. Send a re-check to the reviewer
   that raised the findings, as long as its family still differs from the fix's author.
 * **Permissions.** Whether it's read-only, and what it may run.
 
 ## Act on the findings
 
-* Judge severity yourself; reviewers rate high. When a finding is reasoned only and a run is
-  cheap, run it.
+* Judge severity yourself; reviewers rate high. A finding blocks when the work does serious
+  harm or its central claim is false (blocker), or when a user who follows it gets a wrong
+  outcome, a stated behavior fails, or a correct alternative fails (major). When a finding
+  is reasoned only and a run is cheap, run it.
 * Fix every real blocker and major, the minors you agree with, and the suggestions you
   accept. An accepted suggestion joins the spec.
 * After fixing a blocker, a major or an accepted suggestion, get a re-check. Fixes to minors

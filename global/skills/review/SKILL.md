@@ -12,6 +12,10 @@ and every claim the work makes. A correct alternative the brief lists must pass.
 raise a finding the brief lists as settled. Don't delegate, because the caller needs your
 own judgment.
 
+A re-check after fixes judges only the new diff and whether the earlier findings are fixed,
+and reruns everything mechanical: every test, every known failure case and every correct
+alternative.
+
 ## Report
 
 Number the findings consecutively across sections, and report in this order:
