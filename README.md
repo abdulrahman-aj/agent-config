@@ -26,9 +26,11 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 | `~/.codex/AGENTS.md` | `global/AGENTS.md` |
 | `~/.claude/CLAUDE.md` | `global/AGENTS.md` |
 | `~/.config/opencode/AGENTS.md` | `global/AGENTS.md` |
+| `~/.gemini/AGENTS.md` | `global/AGENTS.md` |
 | `~/.agents/skills/<name>` | `global/skills/<name>/` |
 | `~/.claude/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
+| `~/.gemini/config/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
 | `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
 | `~/.claude/settings.json` | `home/.claude/settings.json` |
@@ -36,6 +38,11 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 | `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
 
 Native directories remain real, so separately installed skills coexist.
+
+T3 runs Gemini through its Antigravity provider. `binaryPath: agy` makes it use the `agy` CLI that dotfiles installs
+with the other harnesses, instead of a runtime T3 downloads. T3 gives `agy` a private profile, so signing in from a
+terminal doesn't sign T3 in: sign in once per machine in T3's Antigravity provider settings. T3 0.1.11 or newer is
+needed for that profile to pick up `~/.gemini/AGENTS.md` and for sign-in on a headless host such as msi-dux.
 
 `~/.claude/settings.json` is plain JSON, so its reasons live here. It compacts at 400k (about 367k in practice)
 instead of the ~967k default, because every request re-reads the whole context, and pins the 1-hour prompt cache.

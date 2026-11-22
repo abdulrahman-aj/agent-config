@@ -44,7 +44,8 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 record="$(record_path "$target")"
 # Everywhere a managed link can live, stowed ones included: stow refuses to
 # replace links into a moved or re-cloned checkout, so the sweep must find them.
-roots=(.agents .claude .codex .config/opencode .config/environment.d .local/bin .t3)
+# ~/.gemini holds agy's own state, so only our two paths there are swept.
+roots=(.agents .claude .codex .config/opencode .config/environment.d .gemini/AGENTS.md .gemini/config/skills .local/bin .t3)
 acted=0
 # TARGET paths slated for removal in --check mode (already gone on install).
 # The conflict check must evaluate post-clean state, not pre-clean.
@@ -57,12 +58,14 @@ want .agents/AGENTS.md "$repo/global/AGENTS.md"
 want .codex/AGENTS.md "$repo/global/AGENTS.md"
 want .claude/CLAUDE.md "$repo/global/AGENTS.md"
 want .config/opencode/AGENTS.md "$repo/global/AGENTS.md"
+want .gemini/AGENTS.md "$repo/global/AGENTS.md"
 for skill in "$repo"/global/skills/*; do
     [[ -f "$skill/SKILL.md" ]] || continue
     name="$(basename "$skill")"
     want ".agents/skills/$name" "$skill"
     want ".claude/skills/$name" "$skill"
     want ".config/opencode/skills/$name" "$skill"
+    want ".gemini/config/skills/$name" "$skill"
 done
 
 remove_or_report() {  # $1 = link, $2 = reason
@@ -79,7 +82,7 @@ remove_or_report() {  # $1 = link, $2 = reason
 managed_links() {
     local r
     for r in "${roots[@]}"; do
-        [[ -d "$target/$r" ]] || continue
+        [[ -e "$target/$r" || -L "$target/$r" ]] || continue
         find "$target/$r" -type l -print0
     done
 }
@@ -133,7 +136,7 @@ clean)
 link)
     for i in "${!dests[@]}"; do
         dest="$target/${dests[$i]}"
-        expected="$(realpath --relative-to="$(dirname "$dest")" "${srcs[$i]}")"
+        expected="$(realpath -m --relative-to="$(dirname "$dest")" "${srcs[$i]}")"
         if [[ -L "$dest" ]]; then
             [[ "$(realpath -m "$dest")" == "${srcs[$i]}" ]] \
                 || fail "conflicting path: $dest (not a managed link). Move it aside and rerun 'make'."

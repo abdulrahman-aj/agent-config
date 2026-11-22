@@ -38,7 +38,7 @@
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
 * **Porting.** Document omissions and divergences in the target repository.
-* **Review.** Before the user sees work, a different model family reviews it (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus). Check YAGNI first.
+* **Review.** Before the user sees work, a different model family reviews it (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus or Neon). Check YAGNI first.
 * **PRs only.** Land work through PRs. Never push to main or rewrite history.
 
 # Model selection
@@ -48,9 +48,10 @@ Use the cheapest model that is smart enough for the task. Use only these:
 | Worker | Model (harness) | Effort | Role | Smarts | Cost |
 |---|---|---|---|---|---|
 | Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | Architect: design, grilling, orchestration and review. Top-level only, never a delegate. | highest | high |
-| Sol 6.2 | `gpt-6.2-sol` (Codex) | `high` | Foundational implementation and hard reasoning | highest | high |
-| Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research, scoped tasks and reviews | high | low |
-| GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Fallback and second reviewer | high | low |
+| Gemini 4 Neon | `gemini-4-neon` (Antigravity) | `high` | Architect: design, grilling, orchestration, review, docs and copy. Top-level only, never a delegate. | highest | high |
+| Sol 6.2 | `gpt-6.2-sol` (Codex) | `high` | Hard, well-defined implementation and the strictest reviews: use it when work must have zero mistakes | highest | high |
+| Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research, scoped tasks and reviews | medium | low |
+| GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Fallback and second reviewer | medium | low |
 
 # Fleet
 
