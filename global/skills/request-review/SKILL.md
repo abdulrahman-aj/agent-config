@@ -21,9 +21,8 @@ can't find alone:
   those afresh.
 * **Scope.** A first review covers the whole change. For a re-check, name the fix commit
   and list the earlier findings; the `review` skill says what a re-check covers.
-* **Reviewer.** A different model family than the author's. Send a re-check to the reviewer
-  that raised the findings, as long as its family still differs from the fix's author.
-* **Permissions.** Whether it's read-only, and what it may run.
+* **Reviewer.** Send a re-check to the reviewer that raised the findings, as long as its
+  family still differs from the fix's author.
 
 ## Act on the findings
 
@@ -40,8 +39,7 @@ can't find alone:
 
 ## Cheap reviews of delegated work
 
-The global agent instructions say when a worker gets these. Run them on the worker's own
-checkout, or after a commit, so they see the exact diff, and brief them as above. They
-catch mechanical slips: house rules, a sentence the change made false, a deleted comment,
-edits beyond the task, a test that rejects the project's own pattern. They are a first
-filter, not a gate.
+Run them on the worker's own checkout, or after a commit, so they see the exact diff, and
+brief them as above. They catch mechanical slips: house rules, a sentence the change made
+false, a deleted comment, edits beyond the task, a test that rejects the project's own
+pattern. They are a first filter, not a gate.

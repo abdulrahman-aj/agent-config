@@ -5,7 +5,8 @@ description: How to give a review that converges. Load before you review work, o
 
 # Review
 
-Keep what you can verify apart from opinion, and let only the verified part block.
+Every finding should be signal: verifiable, sourced and worth acting on. Cut the noise, and
+let only verified findings block.
 
 Judge the work against the spec in your brief: the task's requirements, the project rules,
 and every claim the work makes. A correct alternative the brief lists must pass. Don't
@@ -18,19 +19,18 @@ alternative.
 
 ## Report
 
-Number the findings consecutively across sections, and report in this order:
+Number the findings consecutively, and report in this order:
 
-1. **Header.** PASS or FAIL; the count in each section, with how many are blocker or major;
-   and "Most important: #N", or "Most important: none" for a clean review.
+1. **Header.** PASS or FAIL, and "Most important: #N", or "Most important: none" for a
+   clean review.
 2. **Facts against the spec.** A requirement the work misses, a rule it breaks, a claim a run
-   contradicts, or another defect.
-3. **False fails.** A correct alternative that the work rejects.
-4. **Suggestions.** Anything beyond the spec: a new test case, a known pitfall, an
+   contradicts, a correct alternative it rejects, or another defect.
+3. **Suggestions.** Anything beyond the spec: a new test case, a known pitfall, an
    improvement.
-5. **Checked and sound.** One line on what you checked and found right, so silence reads as
+4. **Checked and sound.** One line on what you checked and found right, so silence reads as
    checked rather than skipped.
 
-Open each finding with one line: its number, its severity (sections 2 and 3 only) and the
+Open each finding with one line: its number, its severity (facts only) and the
 claim. Then fill these fields:
 
 * **Evidence.** Ran it (the command and its output) or reasoned (the exact reasoning). Run
@@ -41,7 +41,7 @@ claim. Then fill these fields:
   the spec doesn't name: the project names or warns about it, the project solves it
   elsewhere, or it's a known common mistake or practice, which you name. Drop an invented
   case with no source.
-* **Fix.** The smallest fix, and its size: a line, small or large.
+* **Fix.** The smallest fix.
 
 ## Severity
 
@@ -54,4 +54,4 @@ Take the highest that applies:
 * **Minor.** Any other real defect: confusing, imprecise, or a broken rule with no wrong
   outcome.
 
-The verdict is PASS when sections 2 and 3 hold no blocker or major. Suggestions never block.
+The verdict is PASS when the facts hold no blocker or major. Suggestions never block.
