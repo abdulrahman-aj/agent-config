@@ -31,12 +31,8 @@ Fan-outs (one source, many homes) are linked by `scripts/link-shared.sh` instead
 | `~/.claude/skills/<name>` | `global/skills/<name>/` |
 | `~/.config/opencode/skills/<name>` | `global/skills/<name>/` |
 | `~/.gemini/config/skills/<name>` | `global/skills/<name>/` |
-| `~/.config/opencode/<file>` | `home/.config/opencode/<file>` |
-| `~/.t3/userdata/settings.json` | `home/.t3/userdata/settings.json` |
-| `~/.t3/userdata/client-settings.json` | `home/.t3/userdata/client-settings.json` |
-| `~/.claude/settings.json` | `home/.claude/settings.json` |
-| `~/.local/bin/agent-wait` | `home/.local/bin/agent-wait` |
-| `~/.config/environment.d/60-agent-heavy-jobs.conf` (laptop) | `hosts/zenbook-dux/.config/environment.d/60-agent-heavy-jobs.conf` |
+| `~/<path>` | `home/<path>` |
+| `~/<path>` (per host) | `hosts/<hostname>/<path>` |
 
 Native directories remain real, so separately installed skills coexist.
 
