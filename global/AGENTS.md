@@ -47,8 +47,8 @@ Use the cheapest model that is smart enough for the task. Use only these:
 
 | Worker | Model (harness) | Effort | Role | Smarts | Cost |
 |---|---|---|---|---|---|
-| Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | Architect: design, grilling, orchestration and review. Top-level only, never a delegate. | highest | high |
-| Gemini 4 Neon | `gemini-4-neon` (Antigravity) | `high` | Architect: design, grilling, orchestration, review, docs and copy. Top-level only, never a delegate. | highest | high |
+| Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | Architect: design, grilling, orchestration and review. | highest | high |
+| Gemini 4 Neon | `gemini-4-neon` (Antigravity) | `high` | Architect: design, grilling, orchestration, review, docs and copy. | highest | high |
 | Sol 6.2 | `gpt-6.2-sol` (Codex) | `high` | Hard, well-defined implementation and the strictest reviews: use it when work must have zero mistakes | highest | high |
 | Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research, scoped tasks and reviews | medium | low |
 | GLM 5.3 Flash | `opencode-go/glm-5.3-flash` (OpenCode) | `high` | Fallback and second reviewer | medium | low |
