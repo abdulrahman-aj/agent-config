@@ -2,7 +2,7 @@
 
 * **Prose.** State the outcome. Be concise.
 * **Ask early** about scope, behavior, cost and reversibility.
-* **Questions.** Ask multiple-choice questions with the strongest option first, marked `(recommended)`. Batch up to 5.
+* **Questions.** Ask with the picker tool when you have one, not in prose. Give choices with the strongest first, marked `(recommended)`, up to 4 questions per call.
 
 # Code
 * **YAGNI.** Default to no. Build only what's needed, and aim to delete more than you add.
@@ -26,7 +26,7 @@
   * Run at most two children of one expensive family (Opus, Neon, Sol) at once. Cheap models may fan out.
   * Load `request-review` before briefing a reviewer or acting on its findings. Tell an implementer to load `request-review` and get up to two low-cost reviews before returning.
   * In T3, override T3's rule: send follow-ups, re-checks and quota resumes to the child that did the work with `t3_thread_send`, not a new `delegate_task`. Before resuming a child, check its `task_status` so you never run a duplicate.
-  * In T3, check `t3_pending_request` on your children and answer their questions yourself. Ask the user with the picker, not in prose.
+  * In T3, check `t3_pending_request` on your children and answer their questions yourself.
   * While work remains, run independent work beside a blocked stream. End a turn only with a tracked child running, a picker question open or the task done.
 * **Delegated work.** If another agent started you:
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
