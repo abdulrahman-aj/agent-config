@@ -36,13 +36,11 @@
   * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
   * Don't end your turn while a job you started runs, because the orchestrator may never see you resume. Start it with `agent-wait --start --log <log> -- <command>`, which prints a PID, then run `agent-wait --pid <pid> --log <log>` until it stops exiting 124; to stop the job, run `kill -- -<pid>`. Exit 0 means the job succeeded and 4 that it failed; on 3 (stalled), end your turn and report the job's state and how to resume.
   * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
-  * Follow the project's rules on every line you touch or print, even in a minimal change. Edit only what the task needs, and report anything else you notice.
-  * Reviewers never delegate. Other workers delegate only reviews, and only to low-cost models in the model table. Only the orchestrator starts implementers and strong gates.
-  * If your task changed project files and isn't a review, load `request-review` and get up to two reviews from low-cost models in other families before returning. Apply what you agree with.
-  * When returning changes, end with: what you changed per item (file:line), what you ran and what it showed, which review findings you rejected and why, and what still worries you.
+  * Follow the project's rules on every line you touch or print, even in a small edit. Change only what the task needs.
+  * Reviewers never delegate. Other workers delegate only reviews, and only to low-cost models from other families. Only the orchestrator starts implementers and strong gates. If you changed project files, load `request-review` and get up to two such reviews before returning.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
 * **Porting.** Document omissions and divergences in the target repository.
-* **Review.** Before the user sees work, get it reviewed. Every reviewer comes from a different model family than the author (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus or Neon). Check YAGNI first.
+* **Review.** Before the user sees work, a different model family reviews it (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus or Neon). Check YAGNI first.
 * **PRs only.** Land work through PRs. Never push to main or rewrite history.
 
 # Model selection
