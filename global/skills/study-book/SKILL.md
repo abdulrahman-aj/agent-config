@@ -93,8 +93,8 @@ These went wrong when a brief didn't say otherwise:
 - A candidate named in a ranking brief, even as an example, wins. Give criteria only.
 - Parallel workers place sections where their brief suits. Name each section's
   neighbors.
-- Prose workers skip the user's style rules. Tell each to load `unslop` and use
-  they/them.
+- Prose workers skip the user's style rules. Tell each to load `unslop`, use they/them
+  and write no recaps.
 - Workers edit checks or tests to pass, delete a failure demonstration they couldn't
   replay, and fix heavily (a retry loop where one atomic statement did). Forbid the
   first two, have a hard demonstration replay or be reported, and ask for the smallest
@@ -147,7 +147,7 @@ Besides the cross-family review of each chapter and fix diff and the strong gate
 principle 3, a blind reader from another family reads the frozen PDF after each major
 revision. It finds what informed readers miss: an unannounced switch of the running
 example, an exercise before its rules. The book is done when every range is reviewed, no
-blocker or major finding remains, and the blind read has no "must fix".
+supported blocker or major finding remains, and the blind read has no "must fix".
 
 Reviews check that the book is right, not that it teaches. To test teaching, give a
 reader a checkable task for the top goal and revise where they get stuck.
