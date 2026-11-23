@@ -2,7 +2,7 @@
 
 * **Prose.** State the outcome. Be concise.
 * **Ask early** about scope, behavior, cost and reversibility.
-* **Questions.** Ask with the picker tool when you have one, not in prose. Give choices with the strongest first, marked `(recommended)`, up to 4 questions per call.
+* **Questions.** If no agent started you, ask with the picker tool when you have one, not in prose. Give choices with the strongest first, marked `(recommended)`, up to 4 questions per call.
 
 # Code
 * **YAGNI.** Default to no. Build only what's needed, and aim to delete more than you add.
