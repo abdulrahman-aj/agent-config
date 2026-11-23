@@ -1,6 +1,6 @@
 ---
 name: fleet
-description: Machine specs, SSH and VM rules for zenbook-dux and msi-dux. Load before running VMs, heavy builds, long-running jobs or commands on msi-dux.
+description: Machine specs, SSH and VM rules for zenbook-dux and msi-dux. Load before running builds, VMs, long-running jobs or commands on msi-dux.
 ---
 
 # Fleet
