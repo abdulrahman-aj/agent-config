@@ -22,8 +22,9 @@ downgrade it.
 * **Evidence.** The command and its output when you can run it, otherwise the exact
   reasoning.
 * **Impact.** One sentence on who gets hurt, a user or a maintainer, and how.
-* **Source.** The requirement, rule or claim it breaks. For a suggestion or a failure case the spec doesn't name, cite where the
-  project names, warns about or solves the problem, or name a known common mistake.
+* **Source.** The requirement, rule or claim it breaks. For a suggestion or a failure case
+  the spec doesn't name, cite where the project names, warns about or solves the problem,
+  or name a known common mistake.
 
 Severity for facts:
 

@@ -18,10 +18,11 @@ Tell the reviewer to load `review`, and give it:
 ## Act
 
 * Judge severity yourself, because reviewers rate high. A blocker causes serious harm or
-  makes the central claim false. A major gives a user who follows the work a wrong outcome, breaks a stated
-  behavior or rejects a correct alternative.
-* Fix every real blocker and major. Accepted suggestions join the spec. Get a re-check after fixing a blocker, a major or an
-  accepted suggestion. Fixes to minors alone need none.
+  makes the central claim false. A major gives a user who follows the work a wrong
+  outcome, breaks a stated behavior or rejects a correct alternative.
+* Fix every real blocker and major. Accepted suggestions join the spec. Get a re-check
+  after fixing a blocker, a major or an accepted suggestion. Fixes to minors alone need
+  none.
 
 ## Cheap reviews
 
