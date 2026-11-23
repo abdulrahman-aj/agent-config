@@ -15,7 +15,7 @@ Tell the reviewer to load `review`, and give it:
 * **Re-checks.** Name the fix commit and the earlier findings. Send it to the same reviewer
   unless that reviewer's family wrote the fix.
 
-## Act
+## Act on gate findings
 
 * Judge severity yourself, because reviewers rate high. A blocker causes serious harm or
   makes the central claim false. A major gives a user who follows the work a wrong
@@ -27,5 +27,6 @@ Tell the reviewer to load `review`, and give it:
 ## Cheap reviews
 
 Run cheap reviewers after a commit, or on the worker's checkout, so they see the exact diff.
-They are a filter, not a gate. They catch house-rule slips, sentences the change made false,
+They are a filter, not a gate: apply what you agree with and skip re-checks. They catch
+house-rule slips, sentences the change made false,
 deleted comments and edits beyond the task.

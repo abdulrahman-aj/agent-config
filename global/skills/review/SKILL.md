@@ -26,9 +26,8 @@ downgrade it.
   the spec doesn't name, cite where the project names, warns about or solves the problem,
   or name a known common mistake.
 
-Severity for facts:
+Severity for facts (any other real defect is minor):
 
 * **Blocker.** It causes serious harm if shipped, or the work's central claim is false.
 * **Major.** A user who follows the work gets a wrong outcome, a stated behavior fails or a
   correct alternative fails.
-* **Minor.** Any other real defect.
