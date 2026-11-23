@@ -28,5 +28,5 @@ Tell the reviewer to load `review`, and give it:
 
 Run cheap reviewers after a commit, or on the worker's checkout, so they see the exact diff.
 They are a filter, not a gate: apply what you agree with and skip re-checks. They catch
-house-rule slips, sentences the change made false,
-deleted comments and edits beyond the task.
+house-rule slips, sentences the change made false, deleted comments and edits beyond the
+task.
