@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Rules for running T3 workers as delegate_task children. Load before you delegate.
+description: Rules for running workers, through T3 delegate_task or native subagents. Load before you delegate.
 ---
 
 # Orchestrate
