@@ -2,6 +2,7 @@
 """Behavior tests for home/.local/bin/agent-wait: real processes, exit codes only."""
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -125,6 +126,26 @@ class AgentWaitTest(unittest.TestCase):
 
     def test_started_job_survives_its_launcher(self):
         pid = self.launch("sleep", "60")
+        self.assertEqual(self.wait("--pid", str(pid), "--max-seconds", "2"), STILL_RUNNING)
+
+    @unittest.skipUnless(subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "true"],
+                                        capture_output=True).returncode == 0
+                         if shutil.which("systemd-run") else False,
+                         "needs a systemd user manager")
+    def test_started_job_survives_stopping_the_callers_scope(self):
+        # T3 runs each agent in a transient scope and stops it on a session
+        # restart; systemd then kills everything in it, setsid or not.
+        unit = f"agent-wait-test-{os.getpid()}-{time.monotonic_ns()}.scope"
+        agent = subprocess.Popen(
+            ["systemd-run", "--user", "--scope", "--quiet", "--collect", f"--unit={unit}", "--",
+             "sh", "-c", '"$0" "$1" --start --log "$2" -- sleep 60 && exec sleep 60',
+             sys.executable, AGENT_WAIT, self.log],
+            stdout=subprocess.PIPE, text=True)
+        self.jobs.append(agent)
+        pid = int(agent.stdout.readline())
+        self.detached.append(pid)
+        subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True, timeout=30)
+        agent.wait(timeout=10)
         self.assertEqual(self.wait("--pid", str(pid), "--max-seconds", "2"), STILL_RUNNING)
 
     def test_started_job_that_succeeds_returns_exited(self):

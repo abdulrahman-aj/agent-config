@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Start a long job detached, then wait for it in bounded steps and notice hangs.
 
---start runs the job under a small supervisor in a new session, so it survives
-the agent's shell, and prints the supervisor's PID. The supervisor records the
+--start runs the job under a small supervisor in a new session and, when a
+systemd user manager is available, in its own transient scope, so it survives
+the agent's shell and a restart of the agent's session. It prints the
+supervisor's PID. The supervisor records the
 job's exit status in LOG.exit. --pid waits on that PID for at most
 --max-seconds and calls a log unchanged for --stall-minutes a stall. Linux only.
 """
@@ -91,7 +93,39 @@ def last_line(path):
     return next((line.strip()[-200:] for line in reversed(lines) if line.strip()), "")
 
 
+def scopes_work():
+    """True if `systemd-run --user --scope` works here (a user manager on the bus)."""
+    try:
+        return subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "--collect", "true"],
+                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def cgroup(pid):
+    try:
+        with open(f"/proc/{pid}/cgroup") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def supervise(log, command):
+    """Run the job and record its exit status in LOG.exit."""
+    try:
+        returncode = subprocess.call(command)
+        write_status(log, 128 - returncode if returncode < 0 else returncode)
+    except OSError as error:
+        # An unknown command, or LOG.exit can't be written: it stays "pending",
+        # which the waiter reports as unknown, never as success.
+        print(f"agent-wait: {error}", file=sys.stderr)
+
+
 def start(log, command):
+    # Probed before forking: once the child has exec'd systemd-run, a failure
+    # there can't fall back, and the job would never start.
+    in_scope = scopes_work()
     try:
         log_fd = open_regular(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
         # Replaces a status from an earlier run. A supervisor that dies before
@@ -103,6 +137,12 @@ def start(log, command):
     sys.stdout.flush()
     pid = os.fork()
     if pid:
+        if in_scope:
+            # Return only once the supervisor has left our cgroup; a scope
+            # stopped before that would still kill it.
+            mine, deadline = cgroup(os.getpid()), time.monotonic() + 10
+            while cgroup(pid) == mine and time.monotonic() < deadline:
+                time.sleep(0.01)
         print(pid)
         return EXITED
     # The supervisor. A new session survives the harness killing the calling
@@ -113,13 +153,18 @@ def start(log, command):
     os.dup2(log_fd, 1)
     os.dup2(log_fd, 2)
     os.closerange(3, os.sysconf("SC_OPEN_MAX"))
-    try:
-        returncode = subprocess.call(command)
-        write_status(log, 128 - returncode if returncode < 0 else returncode)
-    except OSError as error:
-        # An unknown command, or LOG.exit can't be written: it stays "pending",
-        # which the waiter reports as unknown, never as success.
-        print(f"agent-wait: {error}", file=sys.stderr)
+    if in_scope:
+        # T3 runs each agent in a transient scope and stops it when the session
+        # restarts, which kills every process in it, new session or not. A
+        # scope of our own moves the supervisor out. systemd-run --scope execs
+        # in place, so the printed PID stays the supervisor's.
+        try:
+            os.execvp("systemd-run", ["systemd-run", "--user", "--scope", "--quiet", "--collect",
+                                      "--", sys.executable, os.path.abspath(__file__),
+                                      "--supervise", "--log", log, "--", *command])
+        except OSError as error:
+            print(f"agent-wait: no scope, running in the caller's: {error}", file=sys.stderr)
+    supervise(log, command)
     os._exit(0)
 
 
@@ -186,9 +231,14 @@ def main():
                         help="report a stall after the log is unchanged this long (default 15)")
     parser.add_argument("--max-seconds", type=duration, default=540.0,
                         help="return 124 after this long if the job still runs (default 540)")
+    # Internal: --start re-runs itself with this inside its new scope.
+    mode.add_argument("--supervise", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("command", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     args = parser.parse_args()
     command = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if args.supervise:
+        supervise(args.log, command)
+        return EXITED
     if args.start:
         if not args.log or not command:
             parser.error("--start needs --log LOG and a command after --")
