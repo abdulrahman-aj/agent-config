@@ -7,14 +7,16 @@ description: Brief a reviewer and act on its findings. Load before you ask for a
 
 Tell the reviewer to load `review`, and give it:
 
+* **Revision.** Commit first and name the commit, so the reviewer reads a fixed revision,
+  not half-applied fixes.
 * **Spec.** Task requirements, project rules and the work's claims, so the work can't
   narrow its own spec. For rules or structure, ask where each line belongs as well as what
   it means.
 * **Correct alternatives.** The project's own solutions that the task still supports.
 * **Settled findings.** Findings rejected in earlier gates, with reasons. Leave out what a
   worker rejected from its cheap reviews, so the gate judges those afresh.
-* **Re-checks.** Name the fix commit and the earlier findings. Send it to the same reviewer,
-  in its existing thread, unless that reviewer's family wrote the fix.
+* **Re-checks.** Name the earlier findings. Send it to the same reviewer, in its existing
+  thread, unless that reviewer's family wrote the fix.
 
 ## Act on gate findings
 
@@ -27,7 +29,6 @@ Tell the reviewer to load `review`, and give it:
 
 ## Cheap reviews
 
-Run cheap reviewers after a commit, or on the worker's checkout, so they see the exact diff.
-They are a filter, not a gate. Treat their findings as leads to verify before acting, and
-skip re-checks. They catch house-rule slips, sentences the change made false, deleted
-comments and edits beyond the task.
+Cheap reviewers are a filter, not a gate. Treat their findings as leads to verify before
+acting, and skip re-checks. They catch house-rule slips, sentences the change made false,
+deleted comments and edits beyond the task.

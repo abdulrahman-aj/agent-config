@@ -45,10 +45,11 @@ below.
 ## Scope and plan
 
 Load `grill-me`. Settle the reader's knowledge, goals in order, page and hour budget,
-real cases, where exercises run and what they must not touch, and screen or print. The
-reader usually doesn't know the field, so survey it yourself and propose a chapter-level
-table of contents with each chapter's takeaway, budget and what you leave out; the grill
-ends when they approve it. Record it all in a plan file that every brief points at.
+real cases, where exercises run and what they must not touch, screen or print, and which
+models the user allows for each role in this book. The reader usually doesn't know the
+field, so survey it yourself and propose a chapter-level table of contents with each
+chapter's takeaway, budget and what you leave out; the grill ends when they approve it.
+Record it all in a plan file that every brief points at.
 
 Give each book a private repository with `book/` and `lab/`. The PDF ships as a release
 asset, and source material never enters the repository. If the book might be shared,
@@ -143,11 +144,12 @@ These went wrong when a brief didn't say otherwise:
 
 ## Review and flow
 
-Besides the cross-family review of each chapter and fix diff and the strong gate of
-principle 3, a blind reader from another family reads the frozen PDF after each major
-revision. It finds what informed readers miss: an unannounced switch of the running
-example, an exercise before its rules. The book is done when every range is reviewed, no
-supported blocker or major finding remains, and the blind read has no "must fix".
+A different family fact-checks each chapter and fix diff, and every finding comes with a
+reproduction or a source. Besides that and the strong gate of principle 3, a blind
+reader from another family reads the frozen PDF after each major revision. It finds what
+informed readers miss: an unannounced switch of the running example, an exercise before
+its rules. The book is done when every range is reviewed, no supported blocker or major
+finding remains, and the blind read has no "must fix".
 
 Reviews check that the book is right, not that it teaches. To test teaching, give a
 reader a checkable task for the top goal and revise where they get stuck.
