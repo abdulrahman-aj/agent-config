@@ -54,7 +54,7 @@ Use the cheapest model that is smart enough for the task. Use only these:
 
 | Worker | Model (harness) | Effort | Role | Cost |
 |---|---|---|---|---|
-| Opus 5.5 | `claude-opus-5-5` (Claude Code) | `medium` | Architect: design, grilling, orchestration and review | high |
+| Opus 5.5 | `claude-opus-5-5` (Claude Code) | `high` | Architect: design, grilling, orchestration and review | high |
 | Gemini 4 Neon | `gemini-4-neon` (Antigravity) | `high` | Architect: design, grilling, orchestration, review, docs and copy | high |
 | Sol 6.2 | `gpt-6.2-sol` (Codex) | `high` | Hard, well-defined implementation and the strictest reviews: use it when work must have zero mistakes | high |
 | Muse 1.3 | `opencode-go/muse-spark-1.3-contributor` (OpenCode) | `xhigh` | Default for research, scoped tasks and reviews | low |
