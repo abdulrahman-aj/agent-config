@@ -161,7 +161,7 @@ def start(log, command):
         try:
             os.execvp("systemd-run", ["systemd-run", "--user", "--scope", "--quiet", "--collect",
                                       "--", sys.executable, os.path.abspath(__file__),
-                                      "--supervise", "--log", log, "--", *command])
+                                      "--supervise", f"--log={log}", "--", *command])
         except OSError as error:
             print(f"agent-wait: no scope, running in the caller's: {error}", file=sys.stderr)
     supervise(log, command)
