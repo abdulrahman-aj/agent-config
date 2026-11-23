@@ -143,6 +143,7 @@ class AgentWaitTest(unittest.TestCase):
             stdout=subprocess.PIPE, text=True)
         self.jobs.append(agent)
         pid = int(agent.stdout.readline())
+        agent.stdout.close()
         self.detached.append(pid)
         subprocess.run(["systemctl", "--user", "stop", unit], capture_output=True, timeout=30)
         agent.wait(timeout=10)
