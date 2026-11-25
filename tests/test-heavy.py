@@ -150,6 +150,9 @@ class HeavyTest(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertEqual(self.run_heavy(f"exit {code}", HEAVY_WHERE="remote"), code)
 
+    def test_remote_status_survives_output_without_a_final_newline(self):
+        self.assertEqual(self.run_heavy("printf partial; printf more >&2; exit 3", HEAVY_WHERE="remote"), 3)
+
     def test_out_copies_back_what_the_job_made_or_updated(self):
         job = "mkdir -p build && touch build/made && echo more >> tracked.txt"
         rc = self.run_heavy(job, "--out", "build", "--out", "tracked.txt", "--out", "missing",
