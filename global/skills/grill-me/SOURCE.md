@@ -7,8 +7,11 @@ Matt Pocock's `grilling` workflow, installed as `grill-me`, MIT licensed:
 - Path: `skills/productivity/grilling/SKILL.md`
 - License copied from the repository's `LICENSE` at the same revision.
 
-The only change to `SKILL.md` is its frontmatter name: `grilling` → `grill-me`.
-The description and instruction body are unchanged upstream content.
+Local changes to `SKILL.md`:
+- Changed the frontmatter name from `grilling` to `grill-me`.
+- Replaced the upstream Markdown question template with the picker-tool rule (and a plain numbered fallback when no picker exists).
+
+The rest of the description and instruction body is unchanged upstream content.
 
 The upstream `grill-me` wrapper is not installed: it only invokes `grilling` through
 a harness-specific Skill tool. This standalone skill keeps that workflow under one
