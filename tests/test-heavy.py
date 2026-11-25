@@ -162,11 +162,12 @@ class HeavyTest(unittest.TestCase):
         self.assertEqual(self.run_heavy("printf partial; printf more >&2; exit 3", HEAVY_WHERE="remote"), 3)
 
     def test_out_copies_back_what_the_job_made_or_updated(self):
-        job = "mkdir -p build && touch build/made && echo more >> tracked.txt"
+        job = "mkdir -p build && touch build/made ..dots && echo more >> tracked.txt"
         rc = self.run_heavy(job, "--out", "build", "--out", "tracked.txt", "--out", "missing",
-                            HEAVY_WHERE="remote")
+                            "--out", "..dots", HEAVY_WHERE="remote")
         self.assertEqual(rc, 0)
         self.assertTrue(os.path.exists(os.path.join(self.repo, "build", "made")))
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "..dots")))
         self.assertEqual(self.lines("tracked.txt"), 2)
 
     def test_a_signal_stops_the_remote_job_group_and_runs_cleanup(self):
@@ -204,6 +205,54 @@ class HeavyTest(unittest.TestCase):
         proc = subprocess.Popen([HEAVY, "--", check], cwd=worktree, env={**self.env, "HEAVY_WHERE": "remote"})
         self.procs.append(proc)
         self.assertEqual(proc.wait(timeout=60), 0)
+
+    def pid_in(self, path):
+        self.wait_for(path)
+        with open(path) as f:
+            return int(f.read())
+
+    def test_a_grandchild_that_ignores_term_is_killed_after_grace_on_a_signal(self):
+        job = "(trap '' TERM; sleep 60) & echo $! > {}; wait"
+        remote = self.start(job.format("g-remote"), HEAVY_WHERE="remote")
+        remote_pid = self.pid_in(os.path.join(self.remote_repo, "g-remote"))
+        local = self.start(job.format("g-local"))
+        local_pid = self.pid_in(os.path.join(self.repo, "g-local"))
+        for proc in (remote, local):
+            proc.send_signal(signal.SIGTERM)
+        self.assertEqual([p.wait(timeout=40) for p in (remote, local)], [128 + signal.SIGTERM] * 2)
+        self.assertFalse(alive(remote_pid))
+        self.assertFalse(alive(local_pid))
+
+    def test_a_grandchild_that_ignores_term_is_killed_after_grace_on_a_normal_exit(self):
+        job = "(trap '' TERM; sleep 60) & echo $! > {}; exit 4"
+        remote = self.start(job.format("g-remote"), HEAVY_WHERE="remote")
+        local = self.start(job.format("g-local"))
+        self.assertEqual([p.wait(timeout=40) for p in (remote, local)], [4, 4])
+        self.assertFalse(alive(self.pid_in(os.path.join(self.remote_repo, "g-remote"))))
+        self.assertFalse(alive(self.pid_in(os.path.join(self.repo, "g-local"))))
+
+    def run_in(self, cwd, command):
+        proc = subprocess.Popen([HEAVY, "--", command], cwd=cwd, env={**self.env, "HEAVY_WHERE": "remote"},
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.procs.append(proc)
+        return proc
+
+    def test_a_main_checkout_and_its_worktree_share_msi_dux_in_either_order(self):
+        worktree = os.path.join(self.home, "linked")
+        self.git("worktree", "add", "-q", worktree)
+        for order in ([self.repo, worktree], [worktree, self.repo]):
+            with self.subTest(first=os.path.basename(order[0])):
+                state = os.path.join(self.remote_home, ".local", "state")
+                subprocess.run(["rm", "-rf", self.remote_repo, os.path.join(self.remote_home, "linked"), state],
+                               check=True)
+                self.assertEqual([self.run_in(cwd, "git status --short").wait(timeout=60) for cwd in order],
+                                 [0, 0])
+
+    def test_a_main_checkout_and_its_worktree_run_concurrently(self):
+        worktree = os.path.join(self.home, "linked")
+        self.git("worktree", "add", "-q", worktree)
+        procs = [self.run_in(cwd, "git status --short && sleep 1") for cwd in (self.repo, worktree)]
+        self.assertEqual([p.wait(timeout=60) for p in procs], [0, 0])
 
     def test_remote_refuses_to_overwrite_a_directory_it_did_not_copy(self):
         self.write("precious", "keep\n", root=self.remote_repo)

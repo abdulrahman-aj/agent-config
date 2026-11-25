@@ -26,6 +26,9 @@ import time
 REMOTE = "abdulrahman@msi-dux"
 REMOTE_NAME = REMOTE.rpartition("@")[2]
 SSH = os.environ.get("HEAVY_SSH", "ssh")
+CONNECT_TIMEOUT = 5  # seconds; also how long routing waits for msi-dux to answer
+SSH_ARGS = [SSH, "-o", "BatchMode=yes", "-o", f"ConnectTimeout={CONNECT_TIMEOUT}"]
+RSH = shlex.join(SSH_ARGS)  # rsync -e
 LOCK_DIR = os.environ.get("HEAVY_LOCK_DIR", "/tmp/heavy")
 REMOTE_SLOTS = 3
 LOCAL_SLOTS = REMOTE_SLOTS if socket.gethostname() == REMOTE_NAME else 2
@@ -38,7 +41,7 @@ MARK = f"\x1eheavy-{secrets.token_hex(8)} ".encode()
 EPILOG = """\
 routing:
   HEAVY_WHERE=local|remote forces a side; otherwise msi-dux if it answers ssh
-  within 5 s. On a machine with AGENT_HEAVY_JOBS=deny, a local run needs
+  within 5 s. heavy started on msi-dux runs there. On a machine with AGENT_HEAVY_JOBS=deny, a local run needs
   --local-ok.
 
 repo files (at the worktree root, both optional):
@@ -69,7 +72,8 @@ stop() {
   stopped=1
   if [ -n "${pid:-}" ]; then
     kill -TERM -- "-$pid" 2>/dev/null
-    (sleep {grace}; kill -KILL -- "-$pid" 2>/dev/null) >/dev/null 2>&1 &
+    # KILLs a leader that ignores TERM: the wait loop below can't end while it lives.
+    (sleep {grace}; kill -KILL -- "-$pid" 2>/dev/null) 9>&- >/dev/null 2>&1 &
     timer=$!
   fi
 }
@@ -88,14 +92,18 @@ while [ -z "${stopped:-}" ]; do
 done
 if [ -n "${stopped:-}" ]; then rc=143; else
   mark slot "$slot"
-  (cd {cwd} && exec bash -c {command}) 9>&- </dev/null &
+  (cd {cwd} && exec bash -c -- {command}) 9>&- </dev/null &
   pid=$!
   [ -n "${stopped:-}" ] && stop  # a stop that came between the check and the start
   while :; do
     wait "$pid"; rc=$?
     kill -0 "$pid" 2>/dev/null || break  # wait returned early for the trap
   done
-  kill -TERM -- "-$pid" 2>/dev/null  # what the job left in its group
+  # TERM what the job left in its group, and KILL the group if anything outlives
+  # GRACE: a survivor would also hold ssh's pipes open.
+  kill -TERM -- "-$pid" 2>/dev/null
+  for _ in $(seq {grace_tenths}); do kill -0 -- "-$pid" 2>/dev/null || break; sleep 0.1; done
+  kill -KILL -- "-$pid" 2>/dev/null
   [ -n "${timer:-}" ] && kill -- "-$timer" 2>/dev/null
   mark job-done
   if [ -f {root}/.heavy-cleanup ]; then
@@ -113,12 +121,27 @@ exit "$rc"
 PREPARE_SCRIPT = r"""
 list=~/.local/state/heavy/copies
 mkdir -p ~/.local/state/heavy && touch "$list"
+exec 8>>"$list" && flock 8  # one prepare at a time, so two first runs can't both claim a path
+listed() { grep -qxF -- "$1" "$list"; }
+# A path is heavy's if it's listed, lies inside a listed copy (a main checkout's
+# .git, which its worktrees mirror), or holds nothing but heavy's paths (the
+# directory a worktree's mirrored .git needed).
+owned() {
+  listed "$1" && return 0
+  local up=$1 entry
+  while [ "$up" != "${up%/*}" ]; do up=${up%/*}; listed "$up" && return 0; done
+  [ -d "$1" ] && [ ! -L "$1" ] || return 1
+  for entry in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    owned "$entry" || return 1
+  done
+}
 for dir in "$@"; do
-  if [ -e "$dir" ] && ! grep -qxF "$dir" "$list"; then
+  if [ -e "$dir" ] && ! owned "$dir"; then
     echo "heavy: $dir already exists on msi-dux and isn't a heavy copy; not overwriting it" >&2
     exit 1
   fi
-  mkdir -p "$dir" && { grep -qxF "$dir" "$list" || echo "$dir" >> "$list"; }
+  mkdir -p -- "$dir" && { listed "$dir" || printf '%s\n' "$dir" >> "$list"; }
 done
 """
 
@@ -186,12 +209,12 @@ def run_local(command, root, outs):
         return 128 + stop_signal
     queued = time.monotonic() - started
     say(f"running on {socket.gethostname()}, slot {slot}/{LOCAL_SLOTS}, after {queued:.1f}s in queue")
-    job = subprocess.Popen(["bash", "-c", command], stdin=subprocess.DEVNULL, start_new_session=True)
+    job = subprocess.Popen(["bash", "-c", "--", command], stdin=subprocess.DEVNULL, start_new_session=True)
     stopper = threading.Thread(target=stop_local, args=(job,), daemon=True)
     stopper.start()
     rc = job.wait()
     rc = 128 - rc if rc < 0 else rc
-    kill_group(job.pid, signal.SIGTERM)  # what the job left in its group
+    drain_group(job.pid)
     job_time = time.monotonic() - started - queued
     cleanup(root)
     os.close(slot_fd)
@@ -205,7 +228,8 @@ def run_local(command, root, outs):
 
 
 def stop_local(job):
-    """On a signal, TERM the job's group, then KILL it after GRACE seconds."""
+    """On a signal, TERM the job's group, and KILL it after GRACE if the leader ignores
+    TERM: the main thread's wait can't end while the leader lives."""
     while job.poll() is None and stop_signal is None:
         time.sleep(0.2)
     if job.poll() is not None:
@@ -214,7 +238,21 @@ def stop_local(job):
     deadline = time.monotonic() + GRACE
     while job.poll() is None and time.monotonic() < deadline:
         time.sleep(0.2)
-    kill_group(job.pid, signal.SIGKILL)
+    if job.poll() is None:
+        kill_group(job.pid, signal.SIGKILL)
+
+
+def drain_group(pgid):
+    """TERM what the job left in its group, and KILL the group if anything outlives GRACE."""
+    kill_group(pgid, signal.SIGTERM)
+    deadline = time.monotonic() + GRACE
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pgid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.1)
+    kill_group(pgid, signal.SIGKILL)
 
 
 def kill_group(pgid, sig):
@@ -242,7 +280,15 @@ def home_relative(path):
 
 
 def rsync(*args):
-    return subprocess.call(["rsync", "-a", "-e", f"{SSH} -o BatchMode=yes", *args])
+    return subprocess.call(["rsync", "-a", "-e", RSH, *args])
+
+
+def failed(message):
+    """Report heavy's own failure, unless a signal caused it (a Ctrl-C kills rsync too)."""
+    if stop_signal is not None:
+        return 128 + stop_signal
+    say(message)
+    return FAILED
 
 
 def run_remote(command, root, outs):
@@ -258,41 +304,45 @@ def run_remote(command, root, outs):
     # A linked worktree's .git is a pointer to the common dir: mirror that to its own
     # path too. A plain repo's .git is inside the tree and goes with it.
     mirror = None if common.startswith(os.path.realpath(root) + os.sep) else common
-    rel_root, rel_cwd = home_relative(root), home_relative(os.getcwd())
+    rel_root = home_relative(root)
+    if rel_root is None:
+        return FAILED
+    rel_cwd = home_relative(os.getcwd())  # inside root, so under home too
     rel_common = home_relative(mirror) if mirror else ""
-    if None in (rel_root, rel_cwd, rel_common):
+    if rel_common is None:
         return FAILED
     # Two runs of one worktree would overwrite each other's copy.
     tree_fd = acquire(lock_path("tree", root))
     if tree_fd is None:
         return 128 + stop_signal
+    # The common dir is written by a worktree's mirror and by a main checkout's own tree
+    # copy (its .git is inside it), so both shapes sync under one lock per repo.
+    git_fd = acquire(lock_path("git", common))
+    if git_fd is None:
+        return 128 + stop_signal
     queued = time.monotonic() - started
     sync_started = time.monotonic()
     dirs = [rel_root] + ([rel_common] if rel_common else [])
-    prepare = subprocess.run([SSH, "-o", "BatchMode=yes", REMOTE, "bash", "-s", "--", *map(shlex.quote, dirs)],
+    prepare = subprocess.run([*SSH_ARGS, REMOTE, "bash", "-s", "--", *map(shlex.quote, dirs)],
                              input=PREPARE_SCRIPT.encode())
     if prepare.returncode:
-        return FAILED
+        return failed(f"preparing the copy on {REMOTE_NAME} failed (ssh exited {prepare.returncode})")
     if mirror:
-        git_fd = acquire(lock_path("git", mirror))  # one mirror of a repo at a time
-        if git_fd is None:
-            return 128 + stop_signal
         rc = rsync("--delete", f"{mirror}/", f"{REMOTE}:{rel_common}/")
-        os.close(git_fd)
         if rc:
-            say(f"mirroring {mirror} failed (rsync {rc})")
-            return FAILED
+            return failed(f"mirroring {mirror} failed (rsync {rc})")
     ignore = os.path.join(root, ".heavyignore")
     rc = rsync("--delete", *([f"--exclude-from={ignore}"] if os.path.isfile(ignore) else []),
                f"{root}/", f"{REMOTE}:{rel_root}/")
     if rc:
-        say(f"copying {root} failed (rsync {rc})")
-        return FAILED
+        return failed(f"copying {root} failed (rsync {rc})")
+    os.close(git_fd)
     if stop_signal is not None:
         return 128 + stop_signal
     sync_time = time.monotonic() - sync_started
     script = REMOTE_SCRIPT
-    values = {"mark": MARK[1:-1].decode(), "grace": str(GRACE), "lock_dir": shlex.quote(LOCK_DIR),
+    values = {"mark": MARK[1:-1].decode(), "grace": str(GRACE), "grace_tenths": str(GRACE * 10),
+              "lock_dir": shlex.quote(LOCK_DIR),
               "slots": str(REMOTE_SLOTS), "cwd": shlex.quote(rel_cwd), "root": shlex.quote(rel_root),
               "command": shlex.quote(command)}
     for key, value in values.items():
@@ -300,7 +350,7 @@ def run_remote(command, root, outs):
     job_started = time.monotonic()
     # Its own session keeps a Ctrl-C or a group kill (agent-wait) off ssh: heavy then closes
     # ssh's stdin and still hears the remote exit. If heavy dies, the pipe closes all the same.
-    ssh = subprocess.Popen([SSH, "-o", "BatchMode=yes", REMOTE, "bash", "-l", "-s"],
+    ssh = subprocess.Popen([*SSH_ARGS, REMOTE, "bash", "-l", "-s"],
                            stdin=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
     try:
         ssh.stdin.write(script.encode())
@@ -317,7 +367,7 @@ def run_remote(command, root, outs):
     slot_at = events.get("slot", (None, job_started))[1]
     done_at = events.get("job-done", (None, time.monotonic()))[1]
     copy_started = time.monotonic()
-    for out in outs:
+    for out in outs if "exit" in events else []:  # a lost connection has nothing to copy from
         copy_back(out, rel_root, root)
     copy_time = time.monotonic() - copy_started
     os.close(tree_fd)
@@ -386,10 +436,10 @@ def copy_back(out, rel_root, root):
     """Copy back what the job made or updated: --update skips files that are newer here,
     and unchanged files match on size and mtime, so rsync skips them too."""
     path = os.path.relpath(os.path.join(os.getcwd(), out), root)
-    if path.startswith(".."):
+    if path == ".." or path.startswith(".." + os.sep):
         say(f"--out {out}: outside the worktree, skipped")
         return
-    result = subprocess.run(["rsync", "-aR", "--update", "--out-format=%n", "-e", f"{SSH} -o BatchMode=yes",
+    result = subprocess.run(["rsync", "-aR", "--update", "--out-format=%n", "-e", RSH,
                              f"{REMOTE}:{rel_root}/./{path}", f"{root}/"], capture_output=True, text=True)
     if result.returncode == 23 and "No such file" in result.stderr:
         say(f"--out {out}: not on {REMOTE_NAME} after the job")
@@ -402,8 +452,8 @@ def copy_back(out, rel_root, root):
 
 def reachable():
     try:
-        return subprocess.run([SSH, "-o", "ConnectTimeout=4", "-o", "BatchMode=yes", REMOTE, "true"],
-                              stdin=subprocess.DEVNULL, capture_output=True, timeout=5).returncode == 0
+        return subprocess.run([*SSH_ARGS, REMOTE, "true"], stdin=subprocess.DEVNULL, capture_output=True,
+                              timeout=CONNECT_TIMEOUT + 1).returncode == 0
     except subprocess.TimeoutExpired:
         return False
 
@@ -435,20 +485,23 @@ def main():
     where = os.environ.get("HEAVY_WHERE", "")
     if where not in ("", "local", "remote"):
         parser.error("HEAVY_WHERE must be local or remote")
+    silent = False  # msi-dux didn't answer
     if not where:
         if socket.gethostname() == REMOTE_NAME:
             where = "local"
         elif reachable():
             where = "remote"
         else:
-            say(f"{REMOTE_NAME} didn't answer within 5s; running here")
-            where = "local"
+            where, silent = "local", True
     if where == "remote":
         return run_remote(command, root, args.out)
+    why = f"{REMOTE_NAME} didn't answer within {CONNECT_TIMEOUT}s" if silent else None
     if os.environ.get("AGENT_HEAVY_JOBS") == "deny" and not args.local_ok:
-        say(f"AGENT_HEAVY_JOBS=deny on {socket.gethostname()}: not running here. "
-            f"Bring {REMOTE_NAME} up, or pass --local-ok if a local run is approved")
+        say(f"{why + ', and ' if why else ''}AGENT_HEAVY_JOBS=deny on {socket.gethostname()}: "
+            f"not running here. Pass --local-ok if a local run is approved")
         return FAILED
+    if why:
+        say(f"{why}; running here")
     return run_local(command, root, args.out)
 
 
