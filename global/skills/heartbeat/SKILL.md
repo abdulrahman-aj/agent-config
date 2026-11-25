@@ -18,8 +18,8 @@ something could progress.
   progress. A child can stop mid-job or reach `failed`, `completed` or `result_available` without waking the
   parent. Reading status or results is always safe; act on finished or failed results you find. Send a resume
   or start a replacement only when the child has unfinished work, nothing is active (`preparing`, `starting`,
-  `running`, `waiting` or `queued`), and no quota auto-resume is armed or running (see `Orchestrating` in
-  `AGENTS.md`).
+  `running`, `waiting` or `queued`), and, after a quota failure, the reset wait in `Orchestrating` (`AGENTS.md`)
+  has passed.
 * **Why 55 minutes.** When the orchestrator runs on Claude Code, a wake every 55 minutes also keeps its
   1-hour prompt cache warm (each hit restarts the hour). Other harnesses' caches are cheap to miss. Don't use
   60: a wake that fires late misses the cache.
