@@ -17,8 +17,9 @@ something could progress.
   (`t3_thread_list` with `includeSubagents: true`, or `t3_thread_read`) to confirm it is actually running. Never
   assume silence means progress. A child can end its turn mid-job (for example, Antigravity gives no
   background-completion wake), or reach `result_available` without waking the parent. Read, wake or replace a
-  child only when it went idle with unfinished work, not while it is `running`, `starting`, `queued`, or waiting
-  for a Claude or Codex quota auto-resume (Antigravity needs a manual `t3_thread_send` after reset).
+  child only when it went idle with unfinished work, not while it is active (`preparing`, `starting`, `running`,
+  `waiting` or `queued`) or waiting for a Claude or Codex quota auto-resume (Antigravity needs a manual
+  `t3_thread_send` after reset).
 * **Why 55 minutes.** When the orchestrator runs on Claude Code, a wake every 55 minutes also keeps its
   1-hour prompt cache warm (each hit restarts the hour). Other harnesses' caches are cheap to miss. Don't use
   60: a wake that fires late misses the cache.
