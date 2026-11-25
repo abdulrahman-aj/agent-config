@@ -43,13 +43,12 @@ GH_VALUE_FLAGS = {
     "-n", "--notes",
     "--input",
     "-X", "--method",
-    "-H", "--header",
+    "-H", "--header", "--head",
     "-q", "--jq",
     "--template",
     "--cache",
     "--hostname",
     "-B", "--base",
-    "-H", "--head",
     "-a", "--assignee",
     "-l", "--label",
     "-m", "--milestone",
@@ -61,7 +60,19 @@ GH_VALUE_FLAGS = {
 }
 
 SHELL_SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "\n"}
-SHELL_WRAPPERS = {"env", "command", "exec", "nohup", "time"}
+SHELL_WRAPPERS = {"env", "command", "exec", "nohup", "time", "sudo"}
+SUBSHELL_CMDS = {"sh", "bash", "zsh", "dash"}
+FILE_SUB_PATTERNS = [
+    re.compile(r"\$\(\s*cat\s+(?:<\s*)?([^\s)|;&`]+)"),
+    re.compile(r"\$\(\s*<\s*([^\s)|;&`]+)"),
+    re.compile(r"`\s*cat\s+(?:<\s*)?([^\s`|;&]+)"),
+]
+VAR_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
+VAR_FILE_ASSIGN_RE = re.compile(
+    r"(?:^|[\s;&|])([A-Za-z_][A-Za-z0-9_]*)=['\"]?"
+    r"(?:\$\(\s*(?:cat\s+(?:<\s*)?|<\s*)([^\s)|;&`'\"]+)|"
+    r"`\s*cat\s+(?:<\s*)?([^\s`|;&'\"]+))"
+)
 VAR_ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 HEREDOC_START_RE = re.compile(r"<<-?\s*(?:'([^']+)'|\"([^\"]+)\"|([A-Za-z_][A-Za-z0-9_-]*))")
 API_REPO_PATH_RE = re.compile(
@@ -532,7 +543,7 @@ def run_pre_push(remote_url):
             added_text = parse_diff_added_text(patch)
             hits = find_hits(added_text, matcher)
             if hits:
-                findings.append((f"commit {oid[:12]} added lines", hits))
+                findings.append((f"commit {oid[:12]} added lines/paths", hits))
 
     if findings:
         report_findings(owner, name, findings)
@@ -661,8 +672,19 @@ def strip_redirections(tokens):
     return argv, stdin_files, out_files
 
 
+def extract_inline_file_reads(text):
+    """Extract file paths from $(cat f), $(cat < f), $(< f), and `cat f` substitutions."""
+    found = []
+    for pat in FILE_SUB_PATTERNS:
+        for m in pat.finditer(text):
+            path = m.group(1).strip("'\"")
+            if path and path != "-" and not path.startswith("-"):
+                found.append(path)
+    return found
+
+
 def unwrap_command(argv, env_vars):
-    """Strip leading VAR=val and wrapper binaries (env, command, ...); return (cmd_env, rest)."""
+    """Strip leading VAR=val and wrapper binaries (env, command, sudo, ...); return (cmd_env, rest)."""
     local_env = dict(env_vars)
     i = 0
     while i < len(argv):
@@ -675,11 +697,13 @@ def unwrap_command(argv, env_vars):
         base = os.path.basename(tok)
         if base in SHELL_WRAPPERS:
             i += 1
-            # Skip simple flags on wrappers (e.g. env -u FOO, command -p).
+            # Skip simple flags on wrappers (e.g. env -u FOO, sudo -u user, command -p).
             while i < len(argv) and argv[i].startswith("-") and argv[i] != "--":
                 flag = argv[i]
                 i += 1
                 if base == "env" and flag in ("-u", "--unset", "-C", "--chdir") and i < len(argv):
+                    i += 1
+                elif base == "sudo" and flag in ("-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t") and i < len(argv):
                     i += 1
             if i < len(argv) and argv[i] == "--":
                 i += 1
@@ -723,7 +747,7 @@ def detect_git_remote_repo(cwd):
     return None
 
 
-def parse_gh_invocation(args, cwd, local_env, stdin_files, piped_files):
+def parse_gh_invocation(args, cwd, local_env, stdin_files, piped_files, var_files):
     """Inspect a `gh` argv (excluding `gh`). Return (repo_tuple_or_None, files_to_scan) if publishing, else None."""
     repo_flag = None
     positionals = []
@@ -882,17 +906,17 @@ def parse_gh_invocation(args, cwd, local_env, stdin_files, piped_files):
     else:
         return None
 
+    files.extend(stdin_files)
     if uses_stdin:
-        files.extend(stdin_files)
         files.extend(piped_files)
-    else:
-        # Even without explicit '-', stdin redirection may supply body text.
-        files.extend(stdin_files)
 
-    # Extract paths from $(cat path) inside flag arguments (e.g. --body "$(cat /tmp/f)").
+    # Extract paths from inline file substitutions and variables assigned from file reads.
     for tok in args:
-        for m in re.finditer(r"\$\(\s*cat\s+([^\s)|;&]+)", tok):
-            files.append(m.group(1).strip("'\""))
+        files.extend(extract_inline_file_reads(tok))
+        for m in VAR_REF_RE.finditer(tok):
+            vname = m.group(1) or m.group(2)
+            if vname in var_files:
+                files.extend(var_files[vname])
 
     target = None
     if repo_flag:
@@ -916,8 +940,25 @@ def parse_gh_invocation(args, cwd, local_env, stdin_files, piped_files):
     return target, resolved_files
 
 
-def extract_gh_checks(command, initial_cwd):
+def extract_fallback_files(command, cwd):
+    """Best-effort file extraction when shlex fails on broken quoting."""
+    files = extract_inline_file_reads(command)
+    for pat in (
+        r"(?:--body-file|--notes-file|--input)(?:=|\s+)([^\s'\";&|]+)",
+        r"(?:^|\s)-F(?:=|\s+)?(?:[A-Za-z0-9_.-]+=@)?([^\s'\";&|]+)",
+        r"--field(?:=|\s+)[A-Za-z0-9_.-]+=@([^\s'\";&|]+)",
+    ):
+        for m in re.finditer(pat, command):
+            val = m.group(1).strip("'\"")
+            if val and val not in ("-", "@-"):
+                files.append(val)
+    return [resolve_path(f, cwd, os.environ) for f in files]
+
+
+def extract_gh_checks(command, initial_cwd, _depth=0):
     """Return (checks, created_from) for every publishing `gh` call in command."""
+    if _depth > 3:
+        return [], {}
     tokens = tokenize_shell(command)
     if tokens is None:
         # Fallback if shlex fails on unusual Bash syntax: detect gh publishing conservatively.
@@ -938,15 +979,27 @@ def extract_gh_checks(command, initial_cwd):
             if not target:
                 target = detect_git_remote_repo(initial_cwd)
             if target:
-                return [(target, [])], {}
+                return [(target, extract_fallback_files(command, initial_cwd))], {}
         return [], {}
 
     cwd = initial_cwd
     cwd_stack = []
     env_vars = dict(os.environ)
+    var_files = {}
+    # Unquoted `B=$(cat f)` splits on `(` in shlex, so pre-scan command for file-read assignments.
+    for m in VAR_FILE_ASSIGN_RE.finditer(command):
+        path = m.group(2) or m.group(3)
+        if path and path != "-" and not path.startswith("-"):
+            var_files.setdefault(m.group(1), []).append(resolve_path(path, cwd, env_vars))
     piped_files = []
     created_from = {}
     checks = []
+
+    def record_assignment(name, raw_val):
+        env_vars[name] = expand_simple_vars(raw_val, env_vars)
+        inline = extract_inline_file_reads(raw_val)
+        if inline:
+            var_files[name] = [resolve_path(p, cwd, env_vars) for p in inline]
 
     for op_before, seg in split_shell_commands(tokens):
         if seg == ["("]:
@@ -970,7 +1023,7 @@ def extract_gh_checks(command, initial_cwd):
         if all(VAR_ASSIGN_RE.match(t) for t in argv):
             for t in argv:
                 m = VAR_ASSIGN_RE.match(t)
-                env_vars[m.group(1)] = expand_simple_vars(m.group(2), env_vars)
+                record_assignment(m.group(1), m.group(2))
             continue
 
         local_env, rest = unwrap_command(argv, env_vars)
@@ -985,12 +1038,30 @@ def extract_gh_checks(command, initial_cwd):
             for t in rest[1:]:
                 m = VAR_ASSIGN_RE.match(t)
                 if m:
-                    env_vars[m.group(1)] = expand_simple_vars(m.group(2), env_vars)
+                    record_assignment(m.group(1), m.group(2))
             continue
         if cmd in ("cd", "pushd") and len(rest) >= 2 and rest[1] != "-":
             target_dir = resolve_path(rest[1], cwd, local_env)
             if os.path.isdir(target_dir):
                 cwd = target_dir
+            continue
+        if cmd in SUBSHELL_CMDS:
+            # Recurse into `sh -c "..."` / `bash -lc "..."`.
+            j = 1
+            while j < len(rest):
+                if rest[j].startswith("-") and "c" in rest[j][1:] and j + 1 < len(rest):
+                    sub_checks, sub_created = extract_gh_checks(rest[j + 1], cwd, _depth + 1)
+                    checks.extend(sub_checks)
+                    created_from.update(sub_created)
+                    break
+                j += 1
+            piped_files = []
+            continue
+        if cmd == "eval" and len(rest) >= 2:
+            sub_checks, sub_created = extract_gh_checks(" ".join(rest[1:]), cwd, _depth + 1)
+            checks.extend(sub_checks)
+            created_from.update(sub_created)
+            piped_files = []
             continue
         if cmd == "cat":
             srcs = [
@@ -1018,7 +1089,7 @@ def extract_gh_checks(command, initial_cwd):
                 created_from[dst] = list(piped_files) + list(resolved_stdin)
 
         if cmd == "gh":
-            parsed = parse_gh_invocation(rest[1:], cwd, local_env, stdin_files, piped_files)
+            parsed = parse_gh_invocation(rest[1:], cwd, local_env, stdin_files, piped_files, var_files)
             if parsed is not None:
                 target, files = parsed
                 if target is not None:

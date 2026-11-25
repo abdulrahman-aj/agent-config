@@ -63,7 +63,8 @@ What it covers:
 
 What it does not cover:
 - `gh` calls from other harnesses (Codex, Antigravity, OpenCode) rely on the rule in `global/AGENTS.md` and the git `pre-push` hook.
-- Commits already contained in a remote-tracking ref, non-GitHub remotes, and text sent through other channels such as `curl` or a browser.
+- Commits already contained in a remote-tracking ref, `git push --no-verify`, non-GitHub remotes, and text sent through other channels such as `curl` or a browser.
+- Private repositories owned by a different GitHub account than the target repository's owner (add those to `~/.config/leak-check/terms`), private repositories past the 1,000-repo `gh repo list` cap, or repositories created within the 24-hour cache window.
 
 If `gh` fails (offline or unauthenticated), `leak-check` fails closed. Set `LEAK_CHECK_SKIP=1` to bypass the check; it prints a notice to stderr when skipped.
 

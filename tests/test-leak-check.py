@@ -466,5 +466,68 @@ class LeakCheckTest(unittest.TestCase):
         )
 
 
+    def test_annotated_tag_message_and_https_pre_push_url(self):
+        work, bare, env = self.make_repo_pair("tags", "git@github.com:alice/public-repo.git")
+        self.commit_file(work, env, "notes.txt", "clean\n", "clean commit")
+        r = subprocess.run(["git", "-C", work, "push", "origin", "main"], env=env, capture_output=True)
+        self.assertEqual(r.returncode, 0)
+
+        subprocess.run(
+            ["git", "-C", work, "tag", "-a", "v1-bad", "-m", "mentions secret-thing"],
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+        r_bad = subprocess.run(["git", "-C", work, "push", "origin", "v1-bad"], env=env, capture_output=True)
+        self.assertNotEqual(r_bad.returncode, 0)
+        self.assertFalse(self.bare_ref_exists(bare, "refs/tags/v1-bad", env))
+
+        subprocess.run(
+            ["git", "-C", work, "tag", "-a", "v1-ok", "-m", "clean release"],
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+        r_ok = subprocess.run(["git", "-C", work, "push", "origin", "v1-ok"], env=env, capture_output=True)
+        self.assertEqual(r_ok.returncode, 0)
+        self.assertTrue(self.bare_ref_exists(bare, "refs/tags/v1-ok", env))
+
+        # Direct pre-push invocation with HTTPS GitHub URL also blocks leaking tag.
+        bad_oid = subprocess.run(
+            ["git", "-C", work, "rev-parse", "v1-bad"],
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        r_https = subprocess.run(
+            [sys.executable, LEAK_CHECK, "--pre-push", "origin", "https://github.com/alice/public-repo.git"],
+            cwd=work,
+            input=f"refs/tags/v1-bad {bad_oid} refs/tags/v1-bad {'0' * 40}\n",
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+        self.assertNotEqual(r_https.returncode, 0)
+
+    def test_claude_hook_catches_wrappers_substitutions_and_broken_quotes(self):
+        work, _, _ = self.make_repo_pair("claude-adv", "https://github.com/alice/public-repo.git")
+        dirty = os.path.join(self.tmp.name, "dirty.md")
+        with open(dirty, "w", encoding="utf-8") as f:
+            f.write("from secret-thing\n")
+        for cmd in [
+            f"bash -c 'gh pr create --title x --body-file {dirty}'",
+            f"sudo gh pr create --title x --body-file {dirty}",
+            f'gh pr create --title x --body "$(<{dirty})"',
+            f'gh pr create --title x --body "$(cat < {dirty})"',
+            f'gh pr create --title x --body "`cat {dirty}`"',
+            f'B=$(cat {dirty}); gh pr create --title x --body "$B"',
+            f"gh pr create --body-file {dirty} --title 'unterminated",
+        ]:
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.run_claude_hook(cmd, cwd=work).returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
