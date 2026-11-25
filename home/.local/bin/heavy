@@ -23,7 +23,7 @@ import sys
 import threading
 import time
 
-REMOTE = os.environ.get("HEAVY_HOST", "abdulrahman@msi-dux")
+REMOTE = "abdulrahman@msi-dux"
 REMOTE_NAME = REMOTE.rpartition("@")[2]
 SSH = os.environ.get("HEAVY_SSH", "ssh")
 LOCK_DIR = os.environ.get("HEAVY_LOCK_DIR", "/tmp/heavy")
@@ -43,7 +43,8 @@ routing:
 
 repo files (at the worktree root, both optional):
   .heavyignore    rsync exclude patterns for the copy (gitignore isn't used:
-                  a job may need ignored files such as node_modules)
+                  a job may need ignored files such as node_modules). Don't
+                  exclude .git: a worktree copy needs its pointer.
   .heavy-cleanup  bash script run at the root after the job ends, even when
                   it was interrupted (for example, stop a database it started)
 
@@ -51,8 +52,9 @@ exit codes:
   the job's own status, unchanged; 128+N if heavy got signal N; 255 if heavy
   failed itself (see its heavy: lines) or lost the remote job; 2 bad arguments
 
-To stop a job, kill heavy (or its agent-wait group): heavy kills the job's
-process group, here or on msi-dux, then runs .heavy-cleanup.
+To stop a job, send heavy (or its agent-wait group) TERM, INT or HUP: heavy kills
+the job's process group, here or on msi-dux, then runs .heavy-cleanup. A KILL
+leaves a local job running; a remote one still stops when its ssh pipe closes.
 """
 
 # Fed to `bash -l -s` on msi-dux: its login shell is fish, which can't parse
@@ -88,6 +90,7 @@ if [ -n "${stopped:-}" ]; then rc=143; else
   mark slot "$slot"
   (cd {cwd} && exec bash -c {command}) 9>&- </dev/null &
   pid=$!
+  [ -n "${stopped:-}" ] && stop  # a stop that came between the check and the start
   while :; do
     wait "$pid"; rc=$?
     kill -0 "$pid" 2>/dev/null || break  # wait returned early for the trap
