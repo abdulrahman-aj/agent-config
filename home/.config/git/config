@@ -1,0 +1,3 @@
+[hook "leak-check"]
+	event = pre-push
+	command = ~/.local/bin/leak-check --pre-push

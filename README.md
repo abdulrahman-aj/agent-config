@@ -51,4 +51,20 @@ a change applies when T3 next starts the Claude process. Evidence:
 Restart the harness or refresh the skill catalog to see edited instructions or
 newly deployed skills. Changes to `environment.d` apply after the next login.
 
+## Leak guard
+
+`home/.local/bin/leak-check` stops private GitHub repository names from reaching public repositories.
+It queries GitHub through `gh` for the target repository's visibility and its owner's private repository names, caching both under `~/.cache/leak-check/` for 24 hours.
+Add extra project names that are not repository names, one per line, to `~/.config/leak-check/terms` (local only, never committed; `#` lines are comments and `!name` excludes a noisy repo name).
+
+What it covers:
+- Every agent's `git push` to a public GitHub repository, through the global `pre-push` hook in `home/.config/git/config`. It scans commit messages, tag messages, added filenames, and added lines not yet on any remote-tracking ref. Repository-local `pre-push` hooks still run alongside it.
+- Claude Code's `Bash` tool calls that publish text with `gh` (`pr`, `issue`, `release`, and `api` calls with `-f`/`-F`/`--field`/`--raw-field`/`--input`, plus files passed via `--body-file`, `--notes-file`, `-F`, or `--input`), through the `PreToolUse` hook in `home/.claude/settings.json`.
+
+What it does not cover:
+- `gh` calls from other harnesses (Codex, Antigravity, OpenCode) rely on the rule in `global/AGENTS.md` and the git `pre-push` hook.
+- Commits already contained in a remote-tracking ref, non-GitHub remotes, and text sent through other channels such as `curl` or a browser.
+
+If `gh` fails (offline or unauthenticated), `leak-check` fails closed. Set `LEAK_CHECK_SKIP=1` to bypass the check; it prints a notice to stderr when skipped.
+
 Run `make help` for targets.

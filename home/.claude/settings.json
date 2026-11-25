@@ -1,5 +1,18 @@
 {
   "theme": "dark",
   "autoCompactWindow": 400000,
-  "promptCacheTtl": "1h"
+  "promptCacheTtl": "1h",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.local/bin/leak-check --claude-hook"
+          }
+        ]
+      }
+    ]
+  }
 }
