@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Run a heavy job (a build, a test replay) on msi-dux when it answers, else on this machine.
 
-COMMAND runs from the current directory through `bash -c`, its words joined
-like ssh does. On msi-dux it runs in a copy of the git worktree at the same
+COMMAND runs from the current directory through `bash -c`: one word is a shell
+command line (`heavy -- 'cd lab && make'`), several are an argv (`heavy -- touch
+"my file"`). On msi-dux it runs in a copy of the git worktree at the same
 path (same home), uncommitted edits included, with the repo's common .git
 mirrored alongside so worktree pointers and Nix resolve. msi-dux runs 3 jobs
 at once, other machines 2; more wait for a slot. heavy prints its own `heavy:`
@@ -12,6 +13,7 @@ lines to stderr and exits with the job's status.
 import argparse
 import fcntl
 import hashlib
+import secrets
 import os
 import shlex
 import signal
@@ -29,7 +31,9 @@ REMOTE_SLOTS = 3
 LOCAL_SLOTS = REMOTE_SLOTS if socket.gethostname() == REMOTE_NAME else 2
 GRACE = 10  # seconds between SIGTERM and SIGKILL for the job's process group
 FAILED = 255  # heavy's own failures; the job didn't run or its status was lost
-MARK = b"\x1eheavy "  # starts the remote script's protocol lines on stderr
+# Starts the remote script's protocol lines on stderr. The per-run token keeps job
+# output from passing for one.
+MARK = f"\x1eheavy-{secrets.token_hex(8)} ".encode()
 
 EPILOG = """\
 routing:
@@ -58,7 +62,7 @@ process group, here or on msi-dux, then runs .heavy-cleanup.
 # the watcher's cat would swallow the unread rest of the script from stdin.
 REMOTE_SCRIPT = r"""{
 set -m  # job control: the job gets its own process group, so one kill reaches all of it
-mark() { printf '\036heavy %s\n' "$*" >&2; }
+mark() { printf '\036{mark} %s\n' "$*" >&2; }
 stop() {
   stopped=1
   if [ -n "${pid:-}" ]; then
@@ -243,7 +247,11 @@ def run_remote(command, root, outs):
     if root is None:
         say("a remote run copies the git worktree, and this isn't one")
         return FAILED
-    common = os.path.realpath(git("-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+    common = git("-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common is None:
+        say(f"git can't find the common dir of {root}")
+        return FAILED
+    common = os.path.realpath(common)
     # A linked worktree's .git is a pointer to the common dir: mirror that to its own
     # path too. A plain repo's .git is inside the tree and goes with it.
     mirror = None if common.startswith(os.path.realpath(root) + os.sep) else common
@@ -281,17 +289,21 @@ def run_remote(command, root, outs):
         return 128 + stop_signal
     sync_time = time.monotonic() - sync_started
     script = REMOTE_SCRIPT
-    for key, value in {"grace": str(GRACE), "lock_dir": shlex.quote(LOCK_DIR), "slots": str(REMOTE_SLOTS),
-                       "cwd": shlex.quote(rel_cwd), "root": shlex.quote(rel_root),
-                       "command": shlex.quote(command)}.items():
+    values = {"mark": MARK[1:-1].decode(), "grace": str(GRACE), "lock_dir": shlex.quote(LOCK_DIR),
+              "slots": str(REMOTE_SLOTS), "cwd": shlex.quote(rel_cwd), "root": shlex.quote(rel_root),
+              "command": shlex.quote(command)}
+    for key, value in values.items():
         script = script.replace("{" + key + "}", value)
     job_started = time.monotonic()
     # Its own session keeps a Ctrl-C or a group kill (agent-wait) off ssh: heavy then closes
     # ssh's stdin and still hears the remote exit. If heavy dies, the pipe closes all the same.
     ssh = subprocess.Popen([SSH, "-o", "BatchMode=yes", REMOTE, "bash", "-l", "-s"],
                            stdin=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-    ssh.stdin.write(script.encode())
-    ssh.stdin.flush()
+    try:
+        ssh.stdin.write(script.encode())
+        ssh.stdin.flush()
+    except (BrokenPipeError, ValueError):  # ssh died, or a signal closed its stdin already
+        pass
     events = {}
     pump = threading.Thread(target=pump_stderr, args=(ssh.stderr, events, job_started), daemon=True)
     pump.start()
@@ -413,7 +425,7 @@ def main():
     words = args.command[1:] if args.command[:1] == ["--"] else args.command
     if not words:
         parser.error("a command is required")
-    command = " ".join(words)
+    command = words[0] if len(words) == 1 else shlex.join(words)
     for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(signum, on_signal)
     root = git("rev-parse", "--show-toplevel")

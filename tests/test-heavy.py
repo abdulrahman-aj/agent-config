@@ -96,6 +96,14 @@ class HeavyTest(unittest.TestCase):
                 self.assertEqual(self.run_heavy(f"echo run >> {count}; exit {code}"), code)
                 self.assertEqual(self.lines(count), 1)  # 75 isn't "slot busy": no rerun
 
+    def test_several_words_are_an_argv_and_one_word_is_a_command_line(self):
+        proc = subprocess.Popen([HEAVY, "--", "touch", "my file"], cwd=self.repo, env=self.env)
+        self.procs.append(proc)
+        self.assertEqual(proc.wait(timeout=60), 0)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "my file")))
+        self.assertEqual(self.run_heavy("touch a && touch b"), 0)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "b")))
+
     def test_a_job_past_the_cap_waits_for_a_slot(self):
         hold = "touch started-$N; while [ ! -e release ]; do sleep 0.05; done"
         holders = [self.start(hold.replace("$N", str(n))) for n in range(SLOTS)]
@@ -171,6 +179,31 @@ class HeavyTest(unittest.TestCase):
         self.assertEqual(proc.wait(timeout=30), 128 + signal.SIGTERM)
         self.assertFalse(alive(pid))
         self.assertTrue(os.path.exists(os.path.join(self.remote_repo, "cleaned")))
+
+    def test_a_group_kill_stops_the_remote_job_and_heavy_reports_it(self):
+        """agent-wait stops a job by killing heavy's whole process group."""
+        self.write(".heavy-cleanup", "touch cleaned\n")
+        proc = subprocess.Popen([HEAVY, "--", "sleep 300 & echo $! > grandchild; wait"], cwd=self.repo,
+                                env={**self.env, "HEAVY_WHERE": "remote"}, start_new_session=True,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.procs.append(proc)
+        self.wait_for(os.path.join(self.remote_repo, "grandchild"))
+        with open(os.path.join(self.remote_repo, "grandchild")) as f:
+            pid = int(f.read())
+        os.killpg(proc.pid, signal.SIGTERM)
+        self.assertEqual(proc.wait(timeout=30), 128 + signal.SIGTERM)
+        self.assertFalse(alive(pid))
+        self.assertTrue(os.path.exists(os.path.join(self.remote_repo, "cleaned")))
+
+    def test_a_linked_worktree_runs_with_its_common_dir_mirrored(self):
+        worktree = os.path.join(self.home, "linked")
+        self.git("worktree", "add", "-q", worktree)
+        self.write("tracked.txt", "edited in the worktree\n", root=worktree)
+        # The job finds the repo's common dir at the same home-relative path as here.
+        check = "grep -q edited tracked.txt && test -f ~/repo/.git/HEAD && test -d ~/repo/.git/worktrees/linked"
+        proc = subprocess.Popen([HEAVY, "--", check], cwd=worktree, env={**self.env, "HEAVY_WHERE": "remote"})
+        self.procs.append(proc)
+        self.assertEqual(proc.wait(timeout=60), 0)
 
     def test_remote_refuses_to_overwrite_a_directory_it_did_not_copy(self):
         self.write("precious", "keep\n", root=self.remote_repo)
