@@ -29,6 +29,7 @@ check: check-prereqs
 test: check-prereqs
 	@bash tests/test-deploy.sh
 	@python3 tests/test-agent-wait.py
+	@python3 tests/test-heavy.py
 	@python3 tests/test-study-book.py
 
 uninstall:

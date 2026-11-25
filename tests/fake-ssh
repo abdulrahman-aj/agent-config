@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Stands in for ssh in tests/test-heavy.py: runs the remote command on this machine,
+# in and with HOME=$HEAVY_FAKE_HOME, so the "remote" copy lands in a separate tree.
+while [[ ${1:-} == -* ]]; do
+  case $1 in -o | -l | -p) shift 2 ;; *) shift ;; esac
+done
+shift  # the host
+cd "$HEAVY_FAKE_HOME" && HOME=$HEAVY_FAKE_HOME exec bash -c "$*"
