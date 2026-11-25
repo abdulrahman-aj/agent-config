@@ -13,9 +13,9 @@ something could progress.
   (review, merge where authorized, start follow-ups that are now unblocked), and update the user's list of
   what waits on them. Copy the Check liveness, Stop and Restart rules below into that prompt too, so they
   survive compaction. If this thread already has a heartbeat, update it instead of adding a second one.
-* **Check liveness.** For every blocked stream, check `task_status` or `t3_thread_list` to confirm the child
-  it waits on is actually running. Never assume silence means progress. A child can end its turn mid-job
-  (for example, Antigravity gives no background-completion wake), or reach `result_available` without waking
+* **Check liveness.** For every blocked stream, check `task_status` (or `t3_thread_list` with `includeSubagents: true`)
+  to confirm the child it waits on is actually running. Never assume silence means progress. A child can end its turn
+  mid-job (for example, Antigravity gives no background-completion wake), or reach `result_available` without waking
   the parent. Read, wake or replace any child that went idle with unfinished work.
 * **Why 55 minutes.** When the orchestrator runs on Claude Code, a wake every 55 minutes also keeps its
   1-hour prompt cache warm (each hit restarts the hour). Other harnesses' caches are cheap to miss. Don't use
