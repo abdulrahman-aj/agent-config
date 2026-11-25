@@ -1,12 +1,13 @@
 # Personal
 
 * **Prose.** State the outcome. Be concise.
-* **Ask early** about scope, behavior, cost and irreversibility. Proceed on reversible work.
+* **Ask early** about scope, behavior, cost and reversibility.
 * **Questions.** If no agent started you, ask with the picker tool when you have one, not in prose. Give choices with the strongest first, marked `(recommended)`.
 
 # Code
 * **YAGNI.** Default to no. Build only what's needed, and aim to delete more than you add.
 * **Abstractions.** Duplicate first. Abstract only when it reduces complexity.
+* **Locality of behavior.** Keep related code together.
 * **Comments.** Explain why, not what: rationale, invariants, performance and constraints.
 * **Shell.** Don't embed Python in `.sh` files. Write a `.py` file instead.
 * **Chesterton's fence.** Understand why something exists before you remove it.
@@ -20,11 +21,10 @@
 
 # Workflow
 * **Dev environments.** Use the project's Nix dev shell, or add one if none exists.
-* **Reusable tasks.** Put repeatable work in deterministic scripts (for example interact, debug, verify) and expose new ones through the Makefile or similar. Reuse existing scripts before writing new ones.
+* **Reusable tasks.** Do repeatable work through deterministic scripts (for example interact, debug, verify) and expose new ones through the Makefile or similar. Reuse existing scripts before writing new ones.
 * **File locations.** Never write to the top level of `~`. Put logs and evidence under the worktree's `out/`, reusable data under `~/.local/share/<project>/`, caches under `~/.cache/<project>/`, and scratch in `/tmp` or the session scratchpad. Delete scratch when done.
-* **Docs.** State each fact once, where readers look first. Don't restate what code, config or `--help` shows. Replace stale lines instead of appending history.
-* **Project rules.** Put durable project rules in the repo's `AGENTS.md`, not in agent memory, so every harness and reviewer sees them.
 * **Bug discipline.** Fix the root cause, not the symptom. Add a regression test when the bug could plausibly recur.
+* **Porting.** Document omissions and divergences in the target repository.
 * **Review.** Before the user sees work, a different model family reviews it (each row in Model selection is a separate family). Check YAGNI first.
 * **PRs only.** Land work through PRs. Never push to main or rewrite history.
 
@@ -38,7 +38,8 @@ If no agent started you and you delegate:
 * Start implementers and strong gates yourself. Never brief a worker to start them.
 * Run at most two children of one expensive family (Opus, Neon, Sol) at once. Cheap models may fan out.
 * Load `request-review` before briefing a reviewer or acting on its findings. Tell an implementer to load `request-review` and get up to two low-cost reviews before returning.
-* In T3, override T3's rule: send follow-ups, re-checks and quota resumes to the child that did the work with `t3_thread_send`, not a new `delegate_task`. Check `task_status` before resuming so you never run a duplicate. To reach a busy child mid-turn, send with `mode: "steer"`, not `queue`, because a queued send waits until the turn ends.
+* In T3, override T3's rule: send follow-ups and re-checks to the child that did the work with `t3_thread_send`, not a new `delegate_task`. To reach a busy child mid-turn, send with `mode: "steer"`, not `queue`, because a queued send waits until the turn ends.
+* On quota resets in T3, don't manually resume Claude or Codex children because T3 auto-resumes them. Antigravity (Neon) doesn't auto-resume and needs a manual `t3_thread_send` after reset. Before sending any resume or starting a replacement, check `task_status` and the child's live thread status (`t3_thread_list` with `includeSubagents: true`, or `t3_thread_read`), and never send if it is `running`, `starting` or `queued`.
 * In T3, cancel stale queued sends before replacing them. Use `t3_queue` to cancel or edit a queued message on a running child, or `task_cancel` to stop a delegated task and its queue.
 * Before retiring or replacing a long-running child, ask it for a one-turn handover of unposted results, environment fixes and open state.
 * In T3, check `t3_pending_request` on your children and answer their questions yourself.
