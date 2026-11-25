@@ -24,6 +24,7 @@
 * **Porting.** Document omissions and divergences in the target repository.
 * **Review.** Before the user sees work, a different model family reviews it (for example Opus or Muse reviews Sol, and Sol or GLM reviews Opus or Neon). Check YAGNI first.
 * **PRs only.** Land work through PRs. Never push to main or rewrite history.
+* **Public repos.** Before writing to a GitHub repo, check whether it is public. Never name a private repo, its paths or its contents in anything that goes to a public repo (commits, PRs, issues, comments). Describe private evidence generically.
 
 # Delegation
 
