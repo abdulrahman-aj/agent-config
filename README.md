@@ -57,15 +57,11 @@ newly deployed skills. Changes to `environment.d` apply after the next login.
 It queries GitHub through `gh` for the target repository's visibility and its owner's private repository names, caching both under `~/.cache/leak-check/` for 24 hours.
 Add extra project names that are not repository names, one per line, to `~/.config/leak-check/terms` (local only, never committed; `#` lines are comments and `!name` excludes a noisy repo name).
 
-What it covers:
-- Every agent's `git push` to a public GitHub repository, through the global `pre-push` hook in `home/.config/git/config`. It scans commit messages, tag messages, added filenames, and added lines not yet on any remote-tracking ref. Repository-local `pre-push` hooks still run alongside it.
-- Claude Code's `Bash` tool calls that publish text with `gh` (`pr`, `issue`, `release`, and `api` calls with `-f`/`-F`/`--field`/`--raw-field`/`--input`, plus files passed via `--body-file`, `--notes-file`, `-F`, or `--input`), through the `PreToolUse` hook in `home/.claude/settings.json`.
+Two hooks run `leak-check`:
+- `home/.config/git/config` installs a global `pre-push` hook for every agent that scans commit messages and added lines not yet on a remote-tracking ref for public GitHub remotes while letting repo-local hooks run alongside it.
+- `home/.claude/settings.json` installs a Claude Code `PreToolUse` hook on `Bash` that triggers whenever a command mentions `gh` with `pr`, `issue`, `release`, or `api`. It scans the command string plus any existing regular file (up to 1 MB) named by a token in the command, so it may over-block a `gh` command that merely reads a file mentioning a private repo.
 
-What it does not cover:
-- `gh` calls from other harnesses (Codex, Antigravity, OpenCode) rely on the rule in `global/AGENTS.md` and the git `pre-push` hook.
-- Commits already contained in a remote-tracking ref, `git push --no-verify`, non-GitHub remotes, and text sent through other channels such as `curl` or a browser.
-- Private repositories owned by a different GitHub account than the target repository's owner (add those to `~/.config/leak-check/terms`), private repositories past the 1,000-repo `gh repo list` cap, or repositories created within the 24-hour cache window.
-
-If `gh` fails (offline or unauthenticated), `leak-check` fails closed. Set `LEAK_CHECK_SKIP=1` to bypass the check; it prints a notice to stderr when skipped.
+`gh` calls from other harnesses rely on the rule in `global/AGENTS.md` and the git `pre-push` hook, and commits already on a remote-tracking ref, `git push --no-verify`, non-GitHub remotes, and other channels are not scanned.
+`leak-check` fails closed if `gh` fails; set `LEAK_CHECK_SKIP=1` to override (it prints a notice to stderr when skipped).
 
 Run `make help` for targets.

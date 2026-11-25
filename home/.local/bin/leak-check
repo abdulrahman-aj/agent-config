@@ -20,335 +20,155 @@ import sys
 import time
 import urllib.parse
 
-CACHE_TTL_SECONDS = 24 * 60 * 60
-GH_TIMEOUT_SECONDS = 30
+CACHE_TTL = 24 * 60 * 60
+GH_TIMEOUT = 30
+MAX_FILE_BYTES = 1024 * 1024
 GITHUB_HOSTS = {"github.com", "ssh.github.com"}
-REPO_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+REPO_PART = r"[A-Za-z0-9._-]+"
+REPO_PART_RE = re.compile(rf"^{REPO_PART}$")
 ZERO_OID_RE = re.compile(r"^0+$")
-
-# Publishing gh subcommands whose text must be scanned.
-GH_PUBLISH_ACTIONS = {
-    "pr": {"create", "edit", "comment", "review"},
-    "issue": {"create", "edit", "comment"},
-    "release": {"create", "edit"},
-}
-
-# Flags that consume the following token when scanning gh arguments.
-GH_VALUE_FLAGS = {
-    "-R", "--repo",
-    "-b", "--body",
-    "-F", "--body-file", "--notes-file", "--field",
-    "-f", "--raw-field",
-    "-t", "--title",
-    "-n", "--notes",
-    "--input",
-    "-X", "--method",
-    "-H", "--header", "--head",
-    "-q", "--jq",
-    "--template",
-    "--cache",
-    "--hostname",
-    "-B", "--base",
-    "-a", "--assignee",
-    "-l", "--label",
-    "-m", "--milestone",
-    "-p", "--project",
-    "-r", "--reviewer",
-    "--target",
-    "--discussion-category",
-    "--notes-start-tag",
-}
-
-SHELL_SEPARATORS = {";", "&&", "||", "|", "&", "(", ")", "\n"}
-SHELL_WRAPPERS = {"env", "command", "exec", "nohup", "time", "sudo"}
-SUBSHELL_CMDS = {"sh", "bash", "zsh", "dash"}
-FILE_SUB_PATTERNS = [
-    re.compile(r"\$\(\s*cat\s+(?:<\s*)?([^\s)|;&`]+)"),
-    re.compile(r"\$\(\s*<\s*([^\s)|;&`]+)"),
-    re.compile(r"`\s*cat\s+(?:<\s*)?([^\s`|;&]+)"),
-]
-VAR_REF_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
-VAR_FILE_ASSIGN_RE = re.compile(
-    r"(?:^|[\s;&|])([A-Za-z_][A-Za-z0-9_]*)=['\"]?"
-    r"(?:\$\(\s*(?:cat\s+(?:<\s*)?|<\s*)([^\s)|;&`'\"]+)|"
-    r"`\s*cat\s+(?:<\s*)?([^\s`|;&'\"]+))"
-)
-VAR_ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
-HEREDOC_START_RE = re.compile(r"<<-?\s*(?:'([^']+)'|\"([^\"]+)\"|([A-Za-z_][A-Za-z0-9_-]*))")
-API_REPO_PATH_RE = re.compile(
-    r"^(?:https?://api\.github\.com)?/?repos/([^/]+)/([^/?#]+)(?:[/?#]|$)",
-    re.IGNORECASE,
-)
-GH_WEB_URL_RE = re.compile(
-    r"^https?://github\.com/([^/]+)/([^/?#]+)(?:/|$)",
-    re.IGNORECASE,
-)
+GH_CMD_RE = re.compile(r"\bgh\b")
+GH_AREA_RE = re.compile(r"\b(?:pr|issue|release|api)\b")
+REPO_FLAG_RE = re.compile(r"(?:^|\s)(?:-R|--repo)(?:=|\s+)['\"]?([^\s'\"`;&|()]+)")
+API_REPO_RE = re.compile(rf"(?:https?://api\.github\.com)?/?repos/({REPO_PART})/({REPO_PART})", re.IGNORECASE)
+GH_URL_RE = re.compile(rf"https?://github\.com/({REPO_PART})/({REPO_PART})", re.IGNORECASE)
 
 
 class LeakCheckError(Exception):
-    """Fail-closed error (gh failure, unreadable file, bad input)."""
+    """Fail-closed error (gh failure, unreadable file, invalid input)."""
 
 
 def skip_enabled():
-    return os.environ.get("LEAK_CHECK_SKIP") == "1"
+    if os.environ.get("LEAK_CHECK_SKIP") == "1":
+        print("leak-check: skipped (LEAK_CHECK_SKIP=1)", file=sys.stderr)
+        return True
+    return False
 
 
-def print_skip_notice():
-    print("leak-check: skipped (LEAK_CHECK_SKIP=1)", file=sys.stderr)
-
-
-def cache_dir():
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    return os.path.join(base, "leak-check")
-
-
-def terms_file_path():
-    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
-    return os.path.join(base, "leak-check", "terms")
-
-
-def valid_repo_parts(owner, name):
-    if not owner or not name:
-        return False
-    if owner in (".", "..") or name in (".", ".."):
-        return False
-    return bool(REPO_SEGMENT_RE.match(owner) and REPO_SEGMENT_RE.match(name))
-
-
-def strip_git_suffix(name):
-    return name[:-4] if name.endswith(".git") else name
+def valid_repo(owner, name):
+    name = name[:-4] if name.endswith(".git") else name
+    if owner in ("", ".", "..") or name in ("", ".", ".."):
+        return None
+    return (owner, name) if REPO_PART_RE.match(owner) and REPO_PART_RE.match(name) else None
 
 
 def parse_github_remote(url):
-    """Return (owner, repo) if url is a GitHub remote URL, else None."""
-    if not url:
-        return None
-    url = url.strip()
-    # SCP-like syntax: [user@]github.com:owner/repo[.git]
+    url = (url or "").strip()
     if "://" not in url:
         m = re.match(r"^(?:[^@/\s]+@)?([^:/\s]+):/?([^/\s]+)/([^/\s]+?)/?$", url)
-        if not m:
-            return None
-        host, owner, name = m.group(1).lower(), m.group(2), strip_git_suffix(m.group(3))
-        if host not in GITHUB_HOSTS or not valid_repo_parts(owner, name):
-            return None
-        return owner, name
-
-    parsed = urllib.parse.urlparse(url)
-    host = (parsed.hostname or "").lower()
-    if host not in GITHUB_HOSTS:
-        return None
-    parts = [p for p in parsed.path.split("/") if p]
-    if len(parts) != 2:
-        return None
-    owner, name = parts[0], strip_git_suffix(parts[1])
-    if not valid_repo_parts(owner, name):
-        return None
-    return owner, name
+        return valid_repo(m.group(2), m.group(3)) if m and m.group(1).lower() in GITHUB_HOSTS else None
+    p = urllib.parse.urlparse(url)
+    parts = [s for s in p.path.split("/") if s]
+    return valid_repo(parts[0], parts[1]) if (p.hostname or "").lower() in GITHUB_HOSTS and len(parts) == 2 else None
 
 
 def parse_repo_spec(spec):
-    """Parse OWNER/REPO, [HOST/]OWNER/REPO, or GitHub URL into (owner, repo), or None."""
-    if not spec:
-        return None
-    spec = spec.strip()
+    spec = (spec or "").strip()
     if "://" in spec:
-        remote = parse_github_remote(spec)
-        if remote:
-            return remote
-        m = GH_WEB_URL_RE.match(spec)
-        if m:
-            owner, name = m.group(1), strip_git_suffix(m.group(2))
-            if valid_repo_parts(owner, name):
-                return owner, name
-        return None
-    parts = [p for p in spec.strip("/").split("/") if p]
-    if len(parts) == 3:
-        if parts[0].lower() not in GITHUB_HOSTS:
-            return None
-        owner, name = parts[1], strip_git_suffix(parts[2])
-    elif len(parts) == 2:
-        owner, name = parts[0], strip_git_suffix(parts[1])
-    else:
-        return None
-    if not valid_repo_parts(owner, name):
-        return None
-    return owner, name
+        m = GH_URL_RE.match(spec)
+        return parse_github_remote(spec) or (valid_repo(m.group(1), m.group(2)) if m else None)
+    parts = [s for s in spec.strip("/").split("/") if s]
+    if len(parts) == 3 and parts[0].lower() in GITHUB_HOSTS:
+        return valid_repo(parts[1], parts[2])
+    return valid_repo(parts[0], parts[1]) if len(parts) == 2 else None
 
 
-def cache_read(key):
-    path = os.path.join(cache_dir(), f"{key}.json")
+def xdg_file(env_var, default_dir, *parts):
+    return os.path.join(os.environ.get(env_var) or os.path.join(os.path.expanduser("~"), default_dir), *parts)
+
+
+def cache_get(key):
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(xdg_file("XDG_CACHE_HOME", ".cache", "leak-check", f"{key}.json"), encoding="utf-8") as f:
             data = json.load(f)
-        fetched_at = float(data["fetched_at"])
-        if 0 <= time.time() - fetched_at < CACHE_TTL_SECONDS:
+        if 0 <= time.time() - float(data["fetched_at"]) < CACHE_TTL:
             return True, data["value"]
     except (OSError, ValueError, KeyError, TypeError):
         pass
     return False, None
 
 
-def cache_write(key, value):
-    directory = cache_dir()
+def cache_set(key, value):
+    directory = xdg_file("XDG_CACHE_HOME", ".cache", "leak-check")
     try:
         os.makedirs(directory, mode=0o700, exist_ok=True)
         path = os.path.join(directory, f"{key}.json")
         tmp = f"{path}.{os.getpid()}.tmp"
         # Restrict permissions because the cache holds private repository names.
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump({"fetched_at": time.time(), "value": value}, f)
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8") as f:
+            json.dump({"fetched_at": time.time(), "value": value}, f)
         os.replace(tmp, path)
     except OSError:
-        # Cache write failure shouldn't break checking once gh already succeeded.
         pass
 
 
 def run_gh(args):
     try:
-        result = subprocess.run(
-            ["gh", *args],
-            capture_output=True,
-            text=True,
-            timeout=GH_TIMEOUT_SECONDS,
-        )
-    except FileNotFoundError as err:
-        raise LeakCheckError(
-            "gh is not installed or not on PATH; cannot check repo visibility "
-            "(set LEAK_CHECK_SKIP=1 to override)"
-        ) from err
+        r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=GH_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as err:
-        raise LeakCheckError(
-            f"gh failed ({err}); cannot check repo visibility "
-            "(set LEAK_CHECK_SKIP=1 to override)"
-        ) from err
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout or f"exit {result.returncode}").strip()
-        raise LeakCheckError(
-            f"gh {' '.join(args[:3])} failed: {detail} "
-            "(set LEAK_CHECK_SKIP=1 to override)"
-        )
-    return result.stdout
+        raise LeakCheckError(f"gh failed ({err}); set LEAK_CHECK_SKIP=1 to override") from err
+    if r.returncode != 0:
+        detail = (r.stderr or r.stdout or f"exit {r.returncode}").strip()
+        raise LeakCheckError(f"gh {' '.join(args[:3])} failed: {detail} (set LEAK_CHECK_SKIP=1 to override)")
+    return r.stdout
 
 
-def get_repo_visibility(owner, name):
+def get_visibility(owner, name):
     key = f"visibility--{owner.lower()}--{name.lower()}"
-    hit, value = cache_read(key)
-    if hit and isinstance(value, str) and value:
-        return value
-    raw = run_gh(["api", f"repos/{owner}/{name}", "-q", ".visibility"]).strip().lower()
-    if raw not in ("public", "private", "internal"):
-        raise LeakCheckError(
-            f"unexpected visibility {raw!r} for {owner}/{name} "
-            "(set LEAK_CHECK_SKIP=1 to override)"
-        )
-    cache_write(key, raw)
-    return raw
+    hit, val = cache_get(key)
+    if hit and isinstance(val, str) and val:
+        return val
+    vis = run_gh(["api", f"repos/{owner}/{name}", "-q", ".visibility"]).strip().lower()
+    if vis not in ("public", "private", "internal"):
+        raise LeakCheckError(f"unexpected visibility {vis!r} for {owner}/{name} (set LEAK_CHECK_SKIP=1 to override)")
+    cache_set(key, vis)
+    return vis
 
 
-def get_private_repos(owner):
+def get_terms(owner):
     key = f"private--{owner.lower()}"
-    hit, value = cache_read(key)
-    if hit and isinstance(value, list):
-        return [str(v) for v in value if isinstance(v, str) and v]
-    raw = run_gh([
-        "repo", "list", owner,
-        "--visibility", "private",
-        "--limit", "1000",
-        "--json", "name",
-        "-q", ".[].name",
-    ])
-    names = [line.strip() for line in raw.splitlines() if line.strip()]
-    cache_write(key, names)
-    return names
-
-
-def load_extra_terms():
-    """Load local terms file. Lines starting with '#' are comments; '!term' excludes a term."""
-    path = terms_file_path()
+    hit, names = cache_get(key)
+    if not (hit and isinstance(names, list)):
+        out = run_gh(["repo", "list", owner, "--visibility", "private", "--limit", "1000", "--json", "name", "-q", ".[].name"])
+        names = [line.strip() for line in out.splitlines() if line.strip()]
+        cache_set(key, names)
+    extra, ignored = [], set()
+    terms_path = xdg_file("XDG_CONFIG_HOME", ".config", "leak-check", "terms")
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+        with open(terms_path, encoding="utf-8") as f:
+            for line in f:
+                term = line.strip()
+                if term and not term.startswith("#"):
+                    (ignored.add(term[1:].strip().lower()) if term.startswith("!") else extra.append(term))
     except FileNotFoundError:
-        return [], set()
+        pass
     except OSError as err:
-        raise LeakCheckError(
-            f"cannot read terms file {path}: {err} "
-            "(set LEAK_CHECK_SKIP=1 to override)"
-        ) from err
-    extra = []
-    ignored = set()
-    for line in lines:
-        term = line.strip()
-        if not term or term.startswith("#"):
-            continue
-        if term.startswith("!"):
-            excluded = term[1:].strip()
-            if excluded:
-                ignored.add(excluded.lower())
-        else:
-            extra.append(term)
-    return extra, ignored
-
-
-def collect_terms(owner):
-    extra, ignored = load_extra_terms()
+        raise LeakCheckError(f"cannot read {terms_path}: {err} (set LEAK_CHECK_SKIP=1 to override)") from err
     seen = {}
-    for term in get_private_repos(owner) + extra:
-        low = term.lower()
-        if low in ignored:
-            continue
-        if low not in seen:
-            seen[low] = term
+    for term in [*names, *extra]:
+        if isinstance(term, str) and term and term.lower() not in ignored:
+            seen.setdefault(term.lower(), term)
     return list(seen.values())
 
 
-def build_matcher(terms):
-    """Build a case-insensitive matcher where non-alphanumerics (-, _, /, .) act as boundaries."""
-    if not terms:
-        return None, []
+def find_hits(text, terms):
+    """Case-insensitive match where non-alphanumerics (-, _, /, .) act as boundaries."""
+    if not terms or not text:
+        return []
     ordered = sorted(terms, key=len, reverse=True)
-    # [^\W_] matches Unicode letters/digits only, so '_', '-', '/', '.' are boundaries.
-    combined = re.compile(
-        r"(?<![^\W_])(?:" + "|".join(re.escape(t) for t in ordered) + r")(?![^\W_])",
-        re.IGNORECASE,
-    )
-    individual = [
-        (t, re.compile(r"(?<![^\W_])" + re.escape(t) + r"(?![^\W_])", re.IGNORECASE))
-        for t in ordered
-    ]
-    return combined, individual
-
-
-def find_hits(text, matcher):
-    """Return all matching terms in text (empty list if none)."""
-    combined, individual = matcher
-    if not combined or not text:
+    # [^\W_] matches Unicode letters/digits only, so '-', '_', '/', '.' are boundaries.
+    if not re.search(r"(?<![^\W_])(?:" + "|".join(re.escape(t) for t in ordered) + r")(?![^\W_])", text, re.IGNORECASE):
         return []
-    if not combined.search(text):
-        return []
-    # Fast path passed only on a hit; check individually so overlapping terms are all reported.
-    return [term for term, pattern in individual if pattern.search(text)]
+    return [t for t in ordered if re.search(r"(?<![^\W_])" + re.escape(t) + r"(?![^\W_])", text, re.IGNORECASE)]
 
 
-def read_regular_file(path):
-    """Read a regular file without hanging on FIFOs or device nodes."""
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
-    except OSError as err:
-        raise LeakCheckError(f"cannot read {path}: {err}") from err
+def read_regular_file(path, max_bytes=None):
+    """Read a regular file without hanging on FIFOs; returns None if non-regular or over max_bytes."""
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode):
-            raise LeakCheckError(f"refusing to read non-regular file: {path}")
+        if not stat.S_ISREG(st.st_mode) or (max_bytes is not None and st.st_size > max_bytes):
+            return None
         os.set_blocking(fd, True)
         with os.fdopen(fd, "rb") as f:
             fd = -1
@@ -358,811 +178,145 @@ def read_regular_file(path):
             os.close(fd)
 
 
-def check_target_texts(owner, name, sources):
-    """Check labeled text sources against owner/name. Returns list of (label, hits)."""
-    visibility = get_repo_visibility(owner, name)
-    if visibility != "public":
-        return []
-    terms = collect_terms(owner)
-    matcher = build_matcher(terms)
-    findings = []
+def scan_repo(owner, name, sources):
+    if get_visibility(owner, name) != "public":
+        return False
+    terms, blocked = get_terms(owner), False
     for label, text in sources:
-        hits = find_hits(text, matcher)
+        hits = find_hits(text, terms)
         if hits:
-            findings.append((label, hits))
-    return findings
+            print(f"leak-check: blocked for public repo {owner}/{name}: [{', '.join(hits)}] in {label}", file=sys.stderr)
+            blocked = True
+    return blocked
 
 
-def report_findings(owner, name, findings):
-    for label, hits in findings:
-        joined = ", ".join(hits)
-        where = f" in {label}" if label else ""
-        print(
-            f"leak-check: blocked for public repo {owner}/{name}: "
-            f"private term(s) [{joined}] found{where}",
-            file=sys.stderr,
-        )
+def run_git(args, stdin_text=None):
+    r = subprocess.run(["git", *args], input=stdin_text.encode("utf-8") if stdin_text else None, capture_output=True)
+    if r.returncode != 0:
+        raise LeakCheckError(f"git {' '.join(args[:3])} failed: {r.stderr.decode('utf-8', errors='replace').strip()}")
+    return r.stdout.decode("utf-8", errors="replace")
 
 
-# --- Git pre-push mode ---
-
-def run_git(args, cwd=None, stdin_text=None):
-    result = subprocess.run(
-        ["git", *args],
-        cwd=cwd,
-        input=stdin_text.encode("utf-8") if stdin_text is not None else None,
-        capture_output=True,
-        text=False,
-    )
-    if result.returncode != 0:
-        err = result.stderr.decode("utf-8", errors="replace").strip()
-        raise LeakCheckError(f"git {' '.join(args[:3])} failed: {err}")
-    return result.stdout.decode("utf-8", errors="replace")
-
-
-def git_object_type(oid):
-    result = subprocess.run(
-        ["git", "cat-file", "-t", oid],
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.strip() if result.returncode == 0 else None
-
-
-def git_commit_exists(oid):
-    result = subprocess.run(
-        ["git", "cat-file", "-e", f"{oid}^{{commit}}"],
-        capture_output=True,
-    )
-    return result.returncode == 0
-
-
-def parse_diff_added_text(patch_text):
-    """Extract added file paths and added diff lines from unified=0 (--cc) git patches."""
-    added = []
-    in_hunk = False
-    prefix_width = 1
-    for line in patch_text.splitlines():
+def extract_added_lines(patch):
+    added, in_hunk, width = [], False, 1
+    for line in patch.splitlines():
         if line.startswith("diff --git "):
             in_hunk = False
-            continue
-        if not in_hunk and line.startswith("+++ "):
-            target = line[4:]
-            if target != "/dev/null":
-                added.append(target)
-            continue
-        if line.startswith("@@"):
-            m = re.match(r"^(@{2,}) ", line)
-            if m:
-                in_hunk = True
-                # Unified diff uses '@@' (1 prefix column); N-way combined diff uses N+1 '@'s.
-                prefix_width = len(m.group(1)) - 1
-                continue
-        if in_hunk:
-            if line.startswith("\\ No newline"):
-                continue
-            prefix = line[:prefix_width]
+        elif line.startswith("@@") and (m := re.match(r"^(@{2,}) ", line)):
+            in_hunk, width = True, len(m.group(1)) - 1
+        elif in_hunk and not line.startswith("\\ No newline"):
+            prefix = line[:width]
             if "+" in prefix and set(prefix) <= {"+", "-", " "}:
-                added.append(line[prefix_width:])
+                added.append(line[width:])
     return "\n".join(added)
 
 
 def run_pre_push(remote_url):
-    if skip_enabled():
-        print_skip_notice()
-        return 0
-    repo = parse_github_remote(remote_url)
-    if not repo:
+    if skip_enabled() or not (repo := parse_github_remote(remote_url)):
         return 0
     owner, name = repo
-
-    stdin_data = sys.stdin.read()
-    local_commits = []
-    remote_commits = []
-    tag_oids = []
-    for raw_line in stdin_data.splitlines():
-        parts = raw_line.split()
-        if len(parts) < 4:
+    local_oids, remote_oids = [], []
+    for line in sys.stdin.read().splitlines():
+        parts = line.split()
+        if len(parts) < 4 or ZERO_OID_RE.match(parts[1]):
             continue
-        _local_ref, local_oid, _remote_ref, remote_oid = parts[:4]
-        if ZERO_OID_RE.match(local_oid):
-            # Branch or tag deletion pushes nothing to scan.
-            continue
-        obj_type = git_object_type(local_oid)
-        if obj_type == "tag":
-            tag_oids.append(local_oid)
-            if git_commit_exists(local_oid):
-                local_commits.append(f"{local_oid}^{{commit}}")
-        elif obj_type == "commit":
-            local_commits.append(local_oid)
-        if not ZERO_OID_RE.match(remote_oid) and git_commit_exists(remote_oid):
-            remote_commits.append(remote_oid)
-
-    if not local_commits and not tag_oids:
+        local_oids.append(parts[1])
+        if not ZERO_OID_RE.match(parts[3]) and subprocess.run(
+            ["git", "cat-file", "-e", f"{parts[3]}^{{commit}}"], capture_output=True
+        ).returncode == 0:
+            remote_oids.append(parts[3])
+    if not local_oids or get_visibility(owner, name) != "public":
         return 0
-
-    visibility = get_repo_visibility(owner, name)
-    if visibility != "public":
+    commits = [c for c in run_git(["rev-list", *local_oids, "--not", "--remotes", *remote_oids]).splitlines() if c]
+    if not commits:
         return 0
-
-    commits = []
-    if local_commits:
-        rev_args = ["rev-list", *local_commits, "--not", "--remotes", *remote_commits]
-        out = run_git(rev_args)
-        commits = [line.strip() for line in out.splitlines() if line.strip()]
-
-    if not commits and not tag_oids:
-        return 0
-
-    terms = collect_terms(owner)
-    matcher = build_matcher(terms)
-    findings = []
-
-    for tag_oid in tag_oids:
-        tag_text = run_git(["cat-file", "tag", tag_oid])
-        hits = find_hits(tag_text, matcher)
-        if hits:
-            findings.append((f"tag {tag_oid[:12]}", hits))
-
-    if commits:
-        stdin_oids = "\n".join(commits) + "\n"
-        # NUL-separated commit messages avoid ambiguity with message content.
-        raw_msgs = run_git(
-            ["log", "--no-walk=unsorted", "--stdin", "-z", "--format=%H%x00%B"],
-            stdin_text=stdin_oids,
-        )
-        entries = raw_msgs.split("\x00")
-        for i in range(0, len(entries) - 1, 2):
-            oid, msg = entries[i].strip(), entries[i + 1]
-            if not oid:
-                continue
-            hits = find_hits(msg, matcher)
-            if hits:
-                findings.append((f"commit {oid[:12]} message", hits))
-
-        # Check added lines and added/modified filenames per commit.
-        marker = f"__LEAK_CHECK_COMMIT_{os.getpid()}__"
-        raw_patches = run_git(
-            [
-                "-c", "core.quotepath=false",
-                "-c", "diff.mnemonicPrefix=false",
-                "log", "--no-walk=unsorted", "--stdin",
-                "-p", "--cc", "--unified=0",
-                "--no-color", "--no-ext-diff", "--no-textconv", "--no-prefix",
-                f"--format={marker}%H",
-            ],
-            stdin_text=stdin_oids,
-        )
-        for chunk in raw_patches.split(marker):
-            if not chunk:
-                continue
-            oid, _, patch = chunk.partition("\n")
-            oid = oid.strip()
-            if not oid:
-                continue
-            added_text = parse_diff_added_text(patch)
-            hits = find_hits(added_text, matcher)
-            if hits:
-                findings.append((f"commit {oid[:12]} added lines/paths", hits))
-
-    if findings:
-        report_findings(owner, name, findings)
-        return 1
-    return 0
-
-
-# --- Claude Code PreToolUse Bash hook mode ---
-
-def strip_heredoc_bodies(command):
-    """Remove heredoc body lines so apostrophes inside prose don't break shlex parsing."""
-    lines = command.splitlines(keepends=True)
-    out = []
-    pending_delims = []
-    for line in lines:
-        if pending_delims:
-            if line.rstrip("\r\n").lstrip("\t") == pending_delims[0]:
-                pending_delims.pop(0)
-            continue
-        out.append(line)
-        for m in HEREDOC_START_RE.finditer(line):
-            delim = m.group(1) or m.group(2) or m.group(3)
-            if delim:
-                pending_delims.append(delim)
-    return "".join(out)
-
-
-OPERATOR_RE = re.compile(r"&&|\|\||<<<|<<|&>>|&>|>>|>&|<&|[;&|()<>\n]")
-
-
-def tokenize_shell(command):
-    """Tokenize a shell command into operator-separated tokens; returns None on parse error."""
-    stripped = strip_heredoc_bodies(command)
-    try:
-        # Include '\n' in punctuation_chars so newlines split commands like ';'.
-        lex = shlex.shlex(stripped, posix=True, punctuation_chars=";&|()<>\n")
-        lex.whitespace_split = True
-        lex.whitespace = " \t\r"
-        raw_tokens = list(lex)
-    except ValueError:
-        return None
-    tokens = []
-    for tok in raw_tokens:
-        # shlex merges adjacent punctuation chars (e.g. ')\n' or ';;'); split back into operators.
-        if tok and all(c in ";&|()<>\n" for c in tok):
-            tokens.extend(OPERATOR_RE.findall(tok))
-        else:
-            tokens.append(tok)
-    return tokens
-
-
-def split_shell_commands(tokens):
-    """Split shell tokens into (operator_before, command_tokens) segments."""
-    segments = []
-    current = []
-    op_before = None
-    for tok in tokens:
-        if tok in SHELL_SEPARATORS:
-            if current:
-                segments.append((op_before, current))
-                current = []
-            if tok in ("(", ")"):
-                segments.append((tok, [tok]))
-                op_before = tok
-            else:
-                op_before = tok
-        else:
-            current.append(tok)
-    if current:
-        segments.append((op_before, current))
-    return segments
-
-
-def expand_simple_vars(text, env_vars):
-    """Expand $VAR and ${VAR} using assignments tracked earlier in the same Bash command."""
-    def replace(m):
-        name = m.group(1) or m.group(2)
-        return env_vars.get(name, m.group(0))
-    return re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)", replace, text)
-
-
-def resolve_path(raw_path, cwd, env_vars):
-    expanded = os.path.expanduser(expand_simple_vars(raw_path, env_vars))
-    if not os.path.isabs(expanded):
-        expanded = os.path.join(cwd, expanded)
-    return expanded
-
-
-def strip_redirections(tokens):
-    """Separate shell redirections from argv tokens; return (argv, stdin_files, out_files)."""
-    argv = []
-    stdin_files = []
-    out_files = []
-    i = 0
-    while i < len(tokens):
-        tok = tokens[i]
-        # Handle fd-prefixed redirections like `2 >& 1` or `1 > /tmp/out`.
-        if tok.isdigit() and i + 1 < len(tokens) and tokens[i + 1] in (">", ">>", "<", ">&", "<&"):
-            op = tokens[i + 1]
-            if i + 2 < len(tokens):
-                if op == "<" and tok == "0":
-                    stdin_files.append(tokens[i + 2])
-                elif op in (">", ">>") and tok == "1":
-                    out_files.append(tokens[i + 2])
-                i += 3
-            else:
-                i += 2
-            continue
-        if tok == "<" and i + 1 < len(tokens):
-            stdin_files.append(tokens[i + 1])
-            i += 2
-            continue
-        if tok in (">", ">>", "&>", "&>>") and i + 1 < len(tokens):
-            out_files.append(tokens[i + 1])
-            i += 2
-            continue
-        if tok in (">&", "<&", "<<", "<<<"):
-            # `<<- EOF` tokenizes as `<<` `-` `EOF`.
-            if tok == "<<" and i + 1 < len(tokens) and tokens[i + 1] == "-":
-                i += 3
-            else:
-                i += 2
-            continue
-        argv.append(tok)
-        i += 1
-    return argv, stdin_files, out_files
-
-
-def extract_inline_file_reads(text):
-    """Extract file paths from $(cat f), $(cat < f), $(< f), and `cat f` substitutions."""
-    found = []
-    for pat in FILE_SUB_PATTERNS:
-        for m in pat.finditer(text):
-            path = m.group(1).strip("'\"")
-            if path and path != "-" and not path.startswith("-"):
-                found.append(path)
-    return found
-
-
-def unwrap_command(argv, env_vars):
-    """Strip leading VAR=val and wrapper binaries (env, command, sudo, ...); return (cmd_env, rest)."""
-    local_env = dict(env_vars)
-    i = 0
-    while i < len(argv):
-        tok = argv[i]
-        m = VAR_ASSIGN_RE.match(tok)
-        if m:
-            local_env[m.group(1)] = expand_simple_vars(m.group(2), local_env)
-            i += 1
-            continue
-        base = os.path.basename(tok)
-        if base in SHELL_WRAPPERS:
-            i += 1
-            # Skip simple flags on wrappers (e.g. env -u FOO, sudo -u user, command -p).
-            while i < len(argv) and argv[i].startswith("-") and argv[i] != "--":
-                flag = argv[i]
-                i += 1
-                if base == "env" and flag in ("-u", "--unset", "-C", "--chdir") and i < len(argv):
-                    i += 1
-                elif base == "sudo" and flag in ("-u", "-g", "-h", "-p", "-C", "-D", "-r", "-t") and i < len(argv):
-                    i += 1
-            if i < len(argv) and argv[i] == "--":
-                i += 1
-            continue
-        break
-    return local_env, argv[i:]
-
-
-def detect_git_remote_repo(cwd):
-    """Resolve a GitHub (owner, repo) from the git repo at cwd, or None."""
-    for remote in ("origin", "upstream"):
-        result = subprocess.run(
-            ["git", "-C", cwd, "remote", "get-url", remote],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            parsed = parse_github_remote(result.stdout.strip())
-            if parsed:
-                return parsed
-    result = subprocess.run(
-        ["git", "-C", cwd, "remote"],
-        capture_output=True,
-        text=True,
+    # NUL-delimited header keeps commit messages unambiguous alongside the patch.
+    tag = f"__LEAK_CHECK_{os.getpid()}__"
+    raw = run_git(
+        ["log", "--no-walk=unsorted", "--stdin", "-p", "--cc", "--unified=0",
+         "--no-color", "--no-ext-diff", "--no-textconv", f"--format=%x00{tag}%x00%H%x00%B%x00"],
+        "\n".join(commits) + "\n",
     )
-    if result.returncode != 0:
-        return None
-    for remote in result.stdout.splitlines():
-        remote = remote.strip()
-        if not remote or remote in ("origin", "upstream"):
-            continue
-        url_res = subprocess.run(
-            ["git", "-C", cwd, "remote", "get-url", remote],
-            capture_output=True,
-            text=True,
-        )
-        if url_res.returncode == 0:
-            parsed = parse_github_remote(url_res.stdout.strip())
-            if parsed:
-                return parsed
-    return None
+    sources = []
+    for chunk in raw.split(f"\x00{tag}\x00")[1:]:
+        oid, msg, patch = (chunk.split("\x00", 2) + ["", ""])[:3]
+        short = oid.strip()[:12]
+        sources.extend([(f"commit {short} message", msg), (f"commit {short} added lines", extract_added_lines(patch))])
+    return 1 if scan_repo(owner, name, sources) else 0
 
 
-def parse_gh_invocation(args, cwd, local_env, stdin_files, piped_files, var_files):
-    """Inspect a `gh` argv (excluding `gh`). Return (repo_tuple_or_None, files_to_scan) if publishing, else None."""
-    repo_flag = None
-    positionals = []
-    body_files = []
-    dash_f_upper_vals = []
-    api_field_files = []
-    api_input_files = []
-    has_api_write_flag = False
-    uses_stdin = False
-
-    i = 0
-    while i < len(args):
-        tok = args[i]
-        if tok == "--":
-            positionals.extend(args[i + 1 :])
-            break
-        if tok in ("-R", "--repo") and i + 1 < len(args):
-            repo_flag = expand_simple_vars(args[i + 1], local_env)
-            i += 2
-            continue
-        if tok.startswith("--repo="):
-            repo_flag = expand_simple_vars(tok.split("=", 1)[1], local_env)
-            i += 1
-            continue
-        if tok.startswith("-R") and len(tok) > 2:
-            repo_flag = expand_simple_vars(tok[2:].lstrip("="), local_env)
-            i += 1
-            continue
-
-        # File-reading and api-writing flags.
-        if tok in ("--body-file", "--notes-file") and i + 1 < len(args):
-            val = args[i + 1]
-            if val == "-":
-                uses_stdin = True
-            else:
-                body_files.append(val)
-            i += 2
-            continue
-        if tok.startswith(("--body-file=", "--notes-file=")):
-            val = tok.split("=", 1)[1]
-            if val == "-":
-                uses_stdin = True
-            else:
-                body_files.append(val)
-            i += 1
-            continue
-
-        if tok == "--input" and i + 1 < len(args):
-            has_api_write_flag = True
-            val = args[i + 1]
-            if val == "-":
-                uses_stdin = True
-            else:
-                api_input_files.append(val)
-            i += 2
-            continue
-        if tok.startswith("--input="):
-            has_api_write_flag = True
-            val = tok.split("=", 1)[1]
-            if val == "-":
-                uses_stdin = True
-            else:
-                api_input_files.append(val)
-            i += 1
-            continue
-
-        if tok in ("-f", "--raw-field") and i + 1 < len(args):
-            has_api_write_flag = True
-            i += 2
-            continue
-        if tok.startswith("--raw-field=") or (tok.startswith("-f") and len(tok) > 2):
-            has_api_write_flag = True
-            i += 1
-            continue
-
-        if tok == "--field" and i + 1 < len(args):
-            has_api_write_flag = True
-            val = args[i + 1]
-            if "=" in val:
-                _, fval = val.split("=", 1)
-                if fval == "@-":
-                    uses_stdin = True
-                elif fval.startswith("@"):
-                    api_field_files.append(fval[1:])
-            i += 2
-            continue
-        if tok.startswith("--field="):
-            has_api_write_flag = True
-            val = tok.split("=", 1)[1]
-            if "=" in val:
-                _, fval = val.split("=", 1)
-                if fval == "@-":
-                    uses_stdin = True
-                elif fval.startswith("@"):
-                    api_field_files.append(fval[1:])
-            i += 1
-            continue
-
-        # -F means --body-file / --notes-file for pr/issue/release, or --field for api.
-        if tok == "-F" and i + 1 < len(args):
-            has_api_write_flag = True
-            dash_f_upper_vals.append(args[i + 1])
-            i += 2
-            continue
-        if tok.startswith("-F") and len(tok) > 2:
-            has_api_write_flag = True
-            dash_f_upper_vals.append(tok[2:].lstrip("="))
-            i += 1
-            continue
-
-        if tok in GH_VALUE_FLAGS and i + 1 < len(args):
-            i += 2
-            continue
-        if tok.startswith("-"):
-            i += 1
-            continue
-        positionals.append(tok)
-        i += 1
-
-    if not positionals:
-        return None
-
-    subcmd = positionals[0]
-    files = []
-    api_repo = None
-
-    if subcmd in GH_PUBLISH_ACTIONS:
-        if len(positionals) < 2 or positionals[1] not in GH_PUBLISH_ACTIONS[subcmd]:
-            return None
-        files.extend(body_files)
-        for val in dash_f_upper_vals:
-            if val == "-":
-                uses_stdin = True
-            else:
-                files.append(val)
-    elif subcmd == "api":
-        if not has_api_write_flag:
-            return None
-        files.extend(api_field_files)
-        files.extend(api_input_files)
-        for val in dash_f_upper_vals:
-            if "=" in val:
-                _, fval = val.split("=", 1)
-                if fval == "@-":
-                    uses_stdin = True
-                elif fval.startswith("@"):
-                    files.append(fval[1:])
-        for pos in positionals[1:]:
-            m = API_REPO_PATH_RE.match(pos)
-            if m:
-                o, n = m.group(1), strip_git_suffix(m.group(2))
-                # Placeholders like :owner or {owner} resolve from the local repo remote.
-                if not o.startswith((":", "{")) and not n.startswith((":", "{")) and valid_repo_parts(o, n):
-                    api_repo = (o, n)
+def find_command_repos(command, cwd):
+    repos = []
+    add = lambda r: r and r not in repos and repos.append(r)
+    for raw in REPO_FLAG_RE.findall(command):
+        add(parse_repo_spec(raw))
+    for pat in (API_REPO_RE, GH_URL_RE):
+        for m in pat.finditer(command):
+            add(valid_repo(m.group(1), m.group(2)))
+    if not repos:
+        r = subprocess.run(["git", "-C", cwd, "remote", "-v"], capture_output=True, text=True)
+        if r.returncode == 0:
+            by_name = {p[0]: p[1] for line in r.stdout.splitlines() if len(p := line.split()) >= 2}
+            for remote in ("origin", "upstream", *by_name):
+                if parsed := parse_github_remote(by_name.get(remote, "")):
+                    add(parsed)
                     break
-    else:
-        return None
-
-    files.extend(stdin_files)
-    if uses_stdin:
-        files.extend(piped_files)
-
-    # Extract paths from inline file substitutions and variables assigned from file reads.
-    for tok in args:
-        files.extend(extract_inline_file_reads(tok))
-        for m in VAR_REF_RE.finditer(tok):
-            vname = m.group(1) or m.group(2)
-            if vname in var_files:
-                files.extend(var_files[vname])
-
-    target = None
-    if repo_flag:
-        target = parse_repo_spec(repo_flag)
-    if not target and api_repo:
-        target = api_repo
-    if not target:
-        for pos in positionals[1:]:
-            m = GH_WEB_URL_RE.match(pos)
-            if m:
-                o, n = m.group(1), strip_git_suffix(m.group(2))
-                if valid_repo_parts(o, n):
-                    target = (o, n)
-                    break
-    if not target and local_env.get("GH_REPO"):
-        target = parse_repo_spec(local_env["GH_REPO"])
-    if not target:
-        target = detect_git_remote_repo(cwd)
-
-    resolved_files = [resolve_path(f, cwd, local_env) for f in files if f and f != "-"]
-    return target, resolved_files
+    return repos
 
 
-def extract_fallback_files(command, cwd):
-    """Best-effort file extraction when shlex fails on broken quoting."""
-    files = extract_inline_file_reads(command)
-    for pat in (
-        r"(?:--body-file|--notes-file|--input)(?:=|\s+)([^\s'\";&|]+)",
-        r"(?:^|\s)-F(?:=|\s+)?(?:[A-Za-z0-9_.-]+=@)?([^\s'\";&|]+)",
-        r"--field(?:=|\s+)[A-Za-z0-9_.-]+=@([^\s'\";&|]+)",
-    ):
-        for m in re.finditer(pat, command):
-            val = m.group(1).strip("'\"")
-            if val and val not in ("-", "@-"):
-                files.append(val)
-    return [resolve_path(f, cwd, os.environ) for f in files]
-
-
-def extract_gh_checks(command, initial_cwd, _depth=0):
-    """Return (checks, created_from) for every publishing `gh` call in command."""
-    if _depth > 3:
-        return [], {}
-    tokens = tokenize_shell(command)
-    if tokens is None:
-        # Fallback if shlex fails on unusual Bash syntax: detect gh publishing conservatively.
-        if re.search(
-            r"\bgh\s+(?:pr\s+(?:create|edit|comment|review)|"
-            r"issue\s+(?:create|edit|comment)|"
-            r"release\s+(?:create|edit)|api\b)",
-            command,
-        ):
-            target = None
-            m_repo = re.search(r"(?:-R|--repo)(?:=|\s+)([^\s'\";&|]+)", command)
-            if m_repo:
-                target = parse_repo_spec(m_repo.group(1))
-            if not target:
-                m_api = re.search(r"(?:^|\s)/?repos/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+)", command)
-                if m_api and valid_repo_parts(m_api.group(1), strip_git_suffix(m_api.group(2))):
-                    target = (m_api.group(1), strip_git_suffix(m_api.group(2)))
-            if not target:
-                target = detect_git_remote_repo(initial_cwd)
-            if target:
-                return [(target, extract_fallback_files(command, initial_cwd))], {}
-        return [], {}
-
-    cwd = initial_cwd
-    cwd_stack = []
-    env_vars = dict(os.environ)
-    var_files = {}
-    # Unquoted `B=$(cat f)` splits on `(` in shlex, so pre-scan command for file-read assignments.
-    for m in VAR_FILE_ASSIGN_RE.finditer(command):
-        path = m.group(2) or m.group(3)
-        if path and path != "-" and not path.startswith("-"):
-            var_files.setdefault(m.group(1), []).append(resolve_path(path, cwd, env_vars))
-    piped_files = []
-    created_from = {}
-    checks = []
-
-    def record_assignment(name, raw_val):
-        env_vars[name] = expand_simple_vars(raw_val, env_vars)
-        inline = extract_inline_file_reads(raw_val)
-        if inline:
-            var_files[name] = [resolve_path(p, cwd, env_vars) for p in inline]
-
-    for op_before, seg in split_shell_commands(tokens):
-        if seg == ["("]:
-            cwd_stack.append(cwd)
-            piped_files = []
+def extract_referenced_files(command, cwd):
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    # Check both full shlex tokens (paths with spaces) and split pieces (inside sh -c / "$(cat f)").
+    candidates = [p for tok in tokens for p in ([tok, *tok.split()] if any(c.isspace() for c in tok) else [tok])]
+    seen, results = set(), []
+    for raw in candidates:
+        tok = raw.strip("'\"`(); \t\r\n")
+        if tok.startswith("$("):
+            tok = tok[2:].strip("'\"`(); \t\r\n")
+        if "=" in tok:
+            tok = tok.split("=", 1)[1].strip("'\"`();")
+        path = tok.lstrip("<@").strip("'\"`();")
+        if not path or path == "-":
             continue
-        if seg == [")"]:
-            if cwd_stack:
-                cwd = cwd_stack.pop()
-            piped_files = []
+        full = os.path.expanduser(path)
+        full = full if os.path.isabs(full) else os.path.join(cwd, full)
+        if full in seen:
             continue
-
-        if op_before != "|":
-            piped_files = []
-
-        argv, stdin_files, out_files = strip_redirections(seg)
-        if not argv:
+        seen.add(full)
+        try:
+            text = read_regular_file(full, max_bytes=MAX_FILE_BYTES)
+        except OSError:
             continue
-
-        # Track bare VAR=val assignments for later commands in the same shell snippet.
-        if all(VAR_ASSIGN_RE.match(t) for t in argv):
-            for t in argv:
-                m = VAR_ASSIGN_RE.match(t)
-                record_assignment(m.group(1), m.group(2))
-            continue
-
-        local_env, rest = unwrap_command(argv, env_vars)
-        if not rest:
-            continue
-
-        cmd = os.path.basename(rest[0])
-        resolved_out = [resolve_path(p, cwd, local_env) for p in out_files]
-        resolved_stdin = [resolve_path(p, cwd, local_env) for p in stdin_files]
-
-        if cmd == "export":
-            for t in rest[1:]:
-                m = VAR_ASSIGN_RE.match(t)
-                if m:
-                    record_assignment(m.group(1), m.group(2))
-            continue
-        if cmd in ("cd", "pushd") and len(rest) >= 2 and rest[1] != "-":
-            target_dir = resolve_path(rest[1], cwd, local_env)
-            if os.path.isdir(target_dir):
-                cwd = target_dir
-            continue
-        if cmd in SUBSHELL_CMDS:
-            # Recurse into `sh -c "..."` / `bash -lc "..."`.
-            j = 1
-            while j < len(rest):
-                if rest[j].startswith("-") and "c" in rest[j][1:] and j + 1 < len(rest):
-                    sub_checks, sub_created = extract_gh_checks(rest[j + 1], cwd, _depth + 1)
-                    checks.extend(sub_checks)
-                    created_from.update(sub_created)
-                    break
-                j += 1
-            piped_files = []
-            continue
-        if cmd == "eval" and len(rest) >= 2:
-            sub_checks, sub_created = extract_gh_checks(" ".join(rest[1:]), cwd, _depth + 1)
-            checks.extend(sub_checks)
-            created_from.update(sub_created)
-            piped_files = []
-            continue
-        if cmd == "cat":
-            srcs = [
-                resolve_path(a, cwd, local_env)
-                for a in rest[1:]
-                if a != "-" and not a.startswith("-")
-            ] + resolved_stdin
-            if resolved_out:
-                for dst in resolved_out:
-                    created_from[dst] = list(srcs)
-                piped_files = []
-            else:
-                piped_files = srcs
-            continue
-        if cmd in ("cp", "mv"):
-            pos = [a for a in rest[1:] if not a.startswith("-")]
-            if len(pos) >= 2:
-                dst = resolve_path(pos[-1], cwd, local_env)
-                srcs = [resolve_path(s, cwd, local_env) for s in pos[:-1]]
-                created_from[dst] = srcs
-            piped_files = []
-            continue
-        if resolved_out:
-            for dst in resolved_out:
-                created_from[dst] = list(piped_files) + list(resolved_stdin)
-
-        if cmd == "gh":
-            parsed = parse_gh_invocation(rest[1:], cwd, local_env, stdin_files, piped_files, var_files)
-            if parsed is not None:
-                target, files = parsed
-                if target is not None:
-                    checks.append((target, files))
-            piped_files = []
-        else:
-            piped_files = []
-
-    return checks, created_from
-
-
-def expand_files_to_scan(files, created_from):
-    """Expand referenced files through in-command copies/redirects."""
-    result = []
-    seen = set()
-    queue = list(files)
-    while queue:
-        path = queue.pop(0)
-        if path in seen:
-            continue
-        seen.add(path)
-        if path in created_from:
-            # If created from other existing files (e.g. cp/mv/cat a > b), scan those sources.
-            queue.extend(created_from[path])
-            if os.path.exists(path):
-                result.append(path)
-        elif os.path.exists(path):
-            result.append(path)
-    return result
+        if text is not None:
+            results.append((full, text))
+    return results
 
 
 def run_claude_hook():
     if skip_enabled():
-        print_skip_notice()
         return 0
-    raw = sys.stdin.read()
     try:
-        payload = json.loads(raw)
+        payload = json.loads(sys.stdin.read())
     except ValueError as err:
-        print(f"leak-check: invalid hook JSON on stdin: {err}", file=sys.stderr)
-        return 2
+        raise LeakCheckError(f"invalid hook JSON on stdin: {err}") from err
     if not isinstance(payload, dict):
-        print("leak-check: expected JSON object on stdin", file=sys.stderr)
-        return 2
-    tool_name = payload.get("tool_name")
-    if tool_name and tool_name != "Bash":
+        raise LeakCheckError("expected JSON object on stdin")
+    if payload.get("tool_name") and payload["tool_name"] != "Bash":
         return 0
     tool_input = payload.get("tool_input")
-    if not isinstance(tool_input, dict):
-        return 0
-    command = tool_input.get("command")
-    if not isinstance(command, str) or not command.strip():
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if not isinstance(command, str) or not (GH_CMD_RE.search(command) and GH_AREA_RE.search(command)):
         return 0
     cwd = payload.get("cwd") or payload.get("working_directory") or os.getcwd()
-
-    checks, created_from = extract_gh_checks(command, cwd)
-    if not checks:
+    repos = find_command_repos(command, cwd)
+    if not repos:
         return 0
+    sources = [("command", command), *extract_referenced_files(command, cwd)]
+    return 2 if any([scan_repo(o, n, sources) for o, n in repos]) else 0
 
-    blocked = False
-    for (owner, name), files in checks:
-        sources = [("command", command)]
-        for path in expand_files_to_scan(files, created_from):
-            sources.append((path, read_regular_file(path)))
-        findings = check_target_texts(owner, name, sources)
-        if findings:
-            report_findings(owner, name, findings)
-            blocked = True
-
-    return 2 if blocked else 0
-
-
-# --- Direct CLI mode ---
 
 def run_direct(repo_spec, files, visibility_only):
     repo = parse_repo_spec(repo_spec)
@@ -1170,63 +324,44 @@ def run_direct(repo_spec, files, visibility_only):
         raise LeakCheckError(f"invalid GitHub repo {repo_spec!r}; expected OWNER/REPO")
     owner, name = repo
     if visibility_only:
-        vis = get_repo_visibility(owner, name)
-        print(f"{owner}/{name}: {vis}")
+        print(f"{owner}/{name}: {get_visibility(owner, name)}")
         return 0
     if skip_enabled():
-        print_skip_notice()
         return 0
     sources = []
-    if files:
-        for path in files:
-            if path == "-":
-                sources.append(("stdin", sys.stdin.read()))
-            else:
-                sources.append((path, read_regular_file(path)))
-    else:
-        sources.append(("stdin", sys.stdin.read()))
-    findings = check_target_texts(owner, name, sources)
-    if findings:
-        report_findings(owner, name, findings)
-        return 1
-    return 0
+    for path in files or ["-"]:
+        if path == "-":
+            sources.append(("stdin", sys.stdin.read()))
+        else:
+            try:
+                text = read_regular_file(path)
+            except OSError as err:
+                raise LeakCheckError(f"cannot read {path}: {err}") from err
+            if text is None:
+                raise LeakCheckError(f"not a regular file: {path}")
+            sources.append((path, text))
+    return 1 if scan_repo(owner, name, sources) else 0
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Block private GitHub repository names from reaching public repositories.",
-    )
+    parser = argparse.ArgumentParser(description="Block private GitHub repo names from reaching public repos.")
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument(
-        "--pre-push",
-        action="store_true",
-        help="Git pre-push hook mode (receives REMOTE and URL as positional args)",
-    )
-    mode.add_argument(
-        "--claude-hook",
-        action="store_true",
-        help="Claude Code PreToolUse Bash hook mode (reads hook JSON from stdin)",
-    )
-    parser.add_argument(
-        "--visibility",
-        action="store_true",
-        help="Report the target repo's visibility without scanning text",
-    )
+    mode.add_argument("--pre-push", action="store_true", help="Git pre-push hook mode")
+    mode.add_argument("--claude-hook", action="store_true", help="Claude Code PreToolUse Bash hook mode")
+    parser.add_argument("--visibility", action="store_true", help="Report repo visibility without scanning")
     parser.add_argument("args", nargs="*", help="OWNER/REPO [FILE ...] or pre-push REMOTE URL")
     parsed = parser.parse_args()
-
     try:
         if parsed.claude_hook:
             return run_claude_hook()
         if parsed.pre_push:
-            remote_url = parsed.args[1] if len(parsed.args) >= 2 else (parsed.args[0] if parsed.args else "")
-            return run_pre_push(remote_url)
+            return run_pre_push(parsed.args[1] if len(parsed.args) >= 2 else (parsed.args[0] if parsed.args else ""))
         if not parsed.args:
             parser.error("OWNER/REPO is required unless --pre-push or --claude-hook is set")
         return run_direct(parsed.args[0], parsed.args[1:], parsed.visibility)
     except LeakCheckError as err:
         print(f"leak-check: {err}", file=sys.stderr)
-        # Claude Code treats exit 2 as a blocking hook failure; other non-zero codes fail open.
+        # Claude Code blocks only on exit 2; other non-zero codes fail open.
         return 2 if parsed.claude_hook else 1
 
 
