@@ -14,12 +14,12 @@ something could progress.
   what waits on them. Copy the Check liveness, Stop and Restart rules below into that prompt too, so they
   survive compaction. If this thread already has a heartbeat, update it instead of adding a second one.
 * **Check liveness.** For every blocked stream, check `task_status` and the child's live thread status
-  (`t3_thread_list` with `includeSubagents: true`, or `t3_thread_read`) to confirm it is actually running. Never
-  assume silence means progress. A child can end its turn mid-job (for example, Antigravity gives no
-  background-completion wake), or reach `result_available` without waking the parent. Read, wake or replace a
-  child only when it went idle with unfinished work, not while it is active (`preparing`, `starting`, `running`,
-  `waiting` or `queued`) or waiting for a Claude or Codex quota auto-resume (Antigravity needs a manual
-  `t3_thread_send` after reset).
+  (`t3_thread_list` or `t3_thread_read`) to confirm whether work is still running. Never assume silence means
+  progress. A child can stop mid-job or reach `failed`, `completed` or `result_available` without waking the
+  parent. Reading status or results is always safe; act on finished or failed results you find. Send a resume
+  or start a replacement only when the child has unfinished work, nothing is active (`preparing`, `starting`,
+  `running`, `waiting` or `queued`), and no quota auto-resume is armed or running (see `Orchestrating` in
+  `AGENTS.md`).
 * **Why 55 minutes.** When the orchestrator runs on Claude Code, a wake every 55 minutes also keeps its
   1-hour prompt cache warm (each hit restarts the hour). Other harnesses' caches are cheap to miss. Don't use
   60: a wake that fires late misses the cache.
