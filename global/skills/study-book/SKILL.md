@@ -66,8 +66,9 @@ below.
   exercises, answer prompts before looking, expect it to feel hard, and return to the
   questions after a gap.
 - If core principles recur across chapters, introduce each unnamed in context, compare
-  cases to name it on a later meeting, index them at the back, and keep a recurring
-  model only if every reuse compares it to the new case.
+  cases to name it on a later meeting, record where each is first met, named and reused
+  in a back-of-book index, and keep a recurring model only if every reuse compares it
+  to the new case.
 - Label every linked heading from the start and point glossary entries at sections.
 - If the book rates options, name labels after their test, never praise words, state
   each label's rule before the first entry, and have every rating say when it holds and
@@ -81,14 +82,14 @@ below.
 
 - Every section, exercise, question and aside serves a stated can-do goal and what must
   stick; cut interesting asides and detail that serve none.
-- Open each decision section with its crux question in plain prose, or set off visually
-  only for a chapter's key pivots, as a short attempt followed by full explanation,
-  never discovery left to the reader. Never repeat a labelled opener in every section,
-  and never state the rule first.
+- Open decision sections with a crux question by default, in plain prose or set off
+  visually only for a chapter's key pivots, as a short attempt followed by full
+  explanation, never discovery left to the reader. Never repeat a labelled opener in
+  every section.
 - Build the mechanism until the reader can predict the outcome. Target predictions at
   the section's central mechanism, have the reader write the prediction down, resolve it
-  right away with the trace, and put your position after its reasons with its cost and
-  flip threshold.
+  right away with the trace explaining why a plausible wrong prediction fails, and put
+  your position after its reasons with its cost and flip threshold.
 - Work a mechanism in full the first time, fade to a partial walkthrough later, then
   pose it as a problem for the reader. Compare two cases side by side and ask what they
   share before stating a principle.
@@ -120,22 +121,25 @@ below.
   and exercises before their rules. Add one fresh-context strong reader for book-wide
   defects.
 - Reviews check accuracy, not teaching. Run a per-chapter reader probe in book order on
-  rendered PDF or extracted text, never source files where answers sit inline. Have a
-  cold reader write what stuck in at most 150 words without looking back, answer recall
-  questions before peeking and self-grade, and quote where they stumbled. Revise and
-  re-run the same probe to confirm improvement, and test the top can-do goal with a
-  checkable task.
+  rendered pages or extracted text up to the prompts, never source files or a full PDF
+  where answers sit in reach. Have a cold reader write a short summary of what stuck
+  without looking back, answer recall questions before you reveal the answers, and quote
+  where they stumbled. Revise where recall or the model misses, measure improvement with
+  a fresh reader, and test the top can-do goal with a checkable task.
 - Correctness rounds pull a book toward a spec. Narrow the claim before extending a
   worked example when a review finds a gap; when each round's findings land in prior
   additions, re-cut the scope instead of fixing again.
 - After every batch, build and read changed sections with neighbors; before each blind
   read, read the whole book. Check running-example names, one home per case and idea,
   scope framings, exercise rules, and that readers can do each chapter's can-do goals.
-- Where the book uses recurring threads, check the map mechanically so every callback
+- Where the book uses recurring threads, check that index mechanically so every reuse
   comes after its naming chapter and carries a reason; past about four per chapter they
   read as slogans.
 - Before release, run a cross-chapter contradiction sweep over thresholds, ratings,
   glossary definitions, cross-reference targets and universal claims.
+- Replay every printed command mechanically against its printed output and exit status,
+  and before release verify the book from a fresh clone and fresh state through its
+  printed setup.
 - The book is done when every range is reviewed, no supported blocker or major finding
   remains, and the blind read has no "must fix".
 

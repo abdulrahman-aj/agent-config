@@ -50,8 +50,8 @@ Load this reference when a book has runnable labs or code listings extracted fro
   test's subprocesses; run the whole suite from fresh state after each batch.
 - After merging one lab PR, rebase the remaining lab branches and rerun, because shared
   build targets and fixtures break.
-- Before a release, verify from a fresh clone and fresh state through the book's printed
-  setup, companion labs included; leftover state hid a broken step.
+- Include companion labs in the fresh-clone release check from the core skill; leftover
+  state hid a broken step.
 
 ## Guarantees, concurrency and security labs
 
@@ -67,6 +67,6 @@ Load this reference when a book has runnable labs or code listings extracted fro
 - Set up the case that only the claimed mechanism stops; a test that another mechanism
   would also pass proves nothing. A claim that concurrent writes converge also runs
   concurrent writers on the source side.
-- A provider's safety filter blocks security labs, and workers quietly drop them first.
-  Name them neutrally, avoid trigger words, and route them to a model that accepts them
-  in a fresh context.
+- A provider's safety filter can block security demonstrations, and workers quietly drop
+  them first. Require workers to report every blocked or omitted demonstration, and
+  handle it within the provider's safety rules.
