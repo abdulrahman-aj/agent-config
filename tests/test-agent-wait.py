@@ -227,6 +227,65 @@ class AgentWaitTest(unittest.TestCase):
         self.assertEqual(self.read_job(log2)["pid"], pid2)
         self.assertEqual(self.run_aw("wait", log2, "--max-seconds", "1").returncode, STILL_RUNNING)
 
+    def test_wait_does_not_report_replacement_jobs_status(self):
+        log = self.start_job("sh", "-c", "sleep 1.3; exit 42")
+        pid1 = self.read_job(log)["pid"]
+        waiter = subprocess.Popen([sys.executable, AGENT_WAIT, "wait", log],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.jobs.append(waiter)
+        # Wait until job 1 finishes (while waiter is between 1s polls), then
+        # immediately reuse the log for `true` before waiter polls again.
+        self.wait_until_gone(pid1)
+        log2 = self.start_job("true", log=log)
+        self.assertEqual(self.run_aw("wait", log2).returncode, EXITED)
+        waiter.communicate(timeout=10)
+        self.assertEqual(waiter.returncode, JOB_FAILED)
+
+    def test_timed_out_start_never_runs_command(self):
+        # Fake systemd-run: passes the scopes_work probe, then delays past the
+        # 10s start deadline (even in a detached helper holding fd 3) before
+        # attempting to run --supervise.
+        fake_bin = os.path.join(self.tmp.name, "fake-bin")
+        os.mkdir(fake_bin)
+        marker = os.path.join(self.tmp.name, "ran")
+        shim = os.path.join(fake_bin, "systemd-run")
+        with open(shim, "w") as f:
+            f.write(
+                "#!/bin/sh\n"
+                "for a in \"$@\"; do last=\"$a\"; done\n"
+                "if [ \"$last\" = \"true\" ]; then exit 0; fi\n"
+                "while [ \"$#\" -gt 0 ]; do\n"
+                "  if [ \"$1\" = \"--\" ]; then shift; break; fi\n"
+                "  shift\n"
+                "done\n"
+                "(sleep 11; exec \"$@\") &\n"
+                "sleep 12\n"
+            )
+        os.chmod(shim, 0o755)
+        env = dict(os.environ, PATH=f"{fake_bin}:{os.environ.get('PATH', '')}")
+        res = self.run_aw("start", self.log, "--", "sh", "-c", f"touch {marker}", env=env)
+        self.assertEqual(res.returncode, JOB_FAILED)
+        # Wait past the delayed child's 11s wake-up to prove it aborted on fd 3 EOF.
+        time.sleep(2.5)
+        self.assertFalse(os.path.exists(marker))
+        self.assertEqual(self.run_aw("wait", self.log).returncode, BAD_INPUT)
+
+    def test_rejects_log_path_ending_in_job_suffix(self):
+        bad = os.path.join(self.tmp.name, "build.job")
+        self.assertEqual(self.run_aw("start", bad, "--", "true").returncode, BAD_INPUT)
+        self.assertEqual(self.run_aw("wait", bad).returncode, BAD_INPUT)
+        self.assertEqual(self.run_aw("stop", bad).returncode, BAD_INPUT)
+
+    def test_fifo_sidecar_does_not_block_any_subcommand(self):
+        open(self.log, "w").close()
+        os.mkfifo(self.log + ".job")
+        self.assertEqual(self.run_aw("wait", self.log).returncode, JOB_FAILED)
+        self.assertEqual(self.run_aw("stop", self.log).returncode, JOB_FAILED)
+        # start replaces the corrupt FIFO sidecar atomically without blocking.
+        res = self.run_aw("start", self.log, "--", "true")
+        self.assertEqual(res.returncode, EXITED, res.stderr)
+        self.assertEqual(self.run_aw("wait", self.log).returncode, EXITED)
+
     def test_stop_on_already_ended_job_returns_exited(self):
         log = self.start_job("true")
         self.assertEqual(self.run_aw("wait", log).returncode, EXITED)

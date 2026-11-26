@@ -11,18 +11,21 @@ its process group without systemd. Linux only.
 """
 
 import argparse
+from contextlib import suppress
 import fcntl
 import json
 import math
 import os
+import select
 import signal
+import socket
 import stat
 import subprocess
 import sys
 import time
 
 EXITED, BAD_INPUT, STALLED, FAILED, RUNNING = 0, 2, 3, 4, 124
-STOP_TIMEOUT = 5.0
+START_TIMEOUT, STOP_TIMEOUT, JOB_SUFFIX = 10.0, 5.0, ".job"
 
 USAGE = """\
 agent-wait start LOG -- COMMAND [ARG ...]
@@ -31,8 +34,8 @@ agent-wait start LOG -- COMMAND [ARG ...]
 
 EPILOG = """\
 wait options:
-  --stall-minutes M  report a stall after LOG is unchanged this long (default 15)
-  --max-seconds S    return 124 after this long if the job still runs (default 540)
+  --stall-minutes M  stall timeout on unchanged LOG (default 15)
+  --max-seconds S    return 124 after this long if still running (default 540)
 
 exit codes:
   start: 0 started | 2 bad input or job already running on LOG | 4 launch failed
@@ -44,6 +47,9 @@ Limits: stall age carries across calls only through the log's mtime, so a
 future mtime restarts the count, a log deleted between calls gives 2, and
 deleting both LOG and LOG.job while a job runs lets a new start reuse the path.
 """
+
+with open("/proc/sys/kernel/random/boot_id") as _f:
+    BOOT_ID = _f.read().strip()
 
 
 def err(message, code):
@@ -58,17 +64,15 @@ def duration(text):
     return value
 
 
-def job_path(log):
-    return log + ".job"
-
-
-def boot_id():
-    with open("/proc/sys/kernel/random/boot_id") as f:
-        return f.read().strip()
+def run_cmd(argv, timeout=5):
+    try:
+        return subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
 
 
 def open_regular(path, flags):
-    """Open nonblocking, so a FIFO can't hang us; check the type on the descriptor."""
+    """Open nonblocking so a FIFO can't hang us; verify the descriptor is regular."""
     fd = os.open(path, flags | os.O_NONBLOCK | os.O_CLOEXEC, 0o644)
     if not stat.S_ISREG(os.fstat(fd).st_mode):
         os.close(fd)
@@ -78,7 +82,7 @@ def open_regular(path, flags):
 
 
 def write_json(path, data):
-    """Write a sidecar file through a rename so readers never see a partial write."""
+    """Write a sidecar through a rename so readers never see a partial write."""
     tmp = f"{path}.{os.getpid()}.tmp"
     try:
         with open(tmp, "w") as f:
@@ -86,21 +90,15 @@ def write_json(path, data):
             f.write("\n")
         os.replace(tmp, path)
     except BaseException:
-        try:
+        with suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
-
-
-def is_int(value):
-    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def read_job(log):
     """Return a validated job record, None if missing, or 'corrupt' if malformed."""
     try:
-        with open(job_path(log)) as f:
+        with os.fdopen(open_regular(log + JOB_SUFFIX, os.O_RDONLY)) as f:
             data = json.load(f)
     except FileNotFoundError:
         return None
@@ -109,11 +107,16 @@ def read_job(log):
     if not isinstance(data, dict):
         return "corrupt"
     pid, st, bid, unit, code = (data.get(k) for k in ("pid", "start_time", "boot_id", "unit", "exit"))
-    if (not is_int(pid) or pid <= 0 or not isinstance(st, str) or not st
+    if (type(pid) is not int or pid <= 0 or not isinstance(st, str) or not st
             or not isinstance(bid, str) or not bid or not isinstance(unit, str)
-            or (code is not None and not is_int(code))):
+            or (code is not None and type(code) is not int)):
         return "corrupt"
     return {"pid": pid, "start_time": st, "boot_id": bid, "unit": unit, "exit": code}
+
+
+def same_job(a, b):
+    return (isinstance(a, dict) and isinstance(b, dict)
+            and (a["pid"], a["start_time"], a["boot_id"]) == (b["pid"], b["start_time"], b["boot_id"]))
 
 
 def proc_stat(pid):
@@ -121,8 +124,7 @@ def proc_stat(pid):
     try:
         with open(f"/proc/{pid}/stat") as f:
             text = f.read()
-        # The command name may contain spaces and parentheses; fields after it
-        # start at field 3 (state), field 5 is pgrp, field 22 is start time.
+        # Comm may contain spaces and parens; fields after it start at field 3 (state).
         fields = text[text.rindex(")") + 2:].split()
         return fields[0], int(fields[2]), fields[19]
     except (OSError, ValueError, IndexError):
@@ -130,35 +132,20 @@ def proc_stat(pid):
 
 
 def proc_start_time(pid):
-    """Return the process's start time (to catch PID reuse), or None if gone or a zombie."""
     info = proc_stat(pid)
     return None if info is None or info[0] in ("Z", "X") else info[2]
 
 
-def valid_unit(job):
-    """Require the scope unit name to match this job's exact PID and start time."""
-    return bool(job["unit"]) and job["unit"] == f"agent-wait-{job['pid']}-{job['start_time']}.scope"
+def expected_unit(job):
+    """Return the scope unit name only when it matches this job's PID and start time."""
+    unit = f"agent-wait-{job['pid']}-{job['start_time']}.scope"
+    return unit if job["unit"] == unit else ""
 
 
 def unit_active(unit):
-    try:
-        res = subprocess.run(
-            ["systemctl", "--user", "show", "-p", "ActiveState", "--value", unit],
-            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5)
-        return res.returncode == 0 and res.stdout.strip() in (
-            "active", "activating", "reloading", "deactivating")
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
-def pid_matches(job):
-    return job["boot_id"] == boot_id() and proc_start_time(job["pid"]) == job["start_time"]
-
-
-def job_running(job):
-    if not isinstance(job, dict) or job["boot_id"] != boot_id():
-        return False
-    return proc_start_time(job["pid"]) == job["start_time"] or (valid_unit(job) and unit_active(job["unit"]))
+    res = run_cmd(["systemctl", "--user", "show", "-p", "ActiveState", "--value", unit])
+    return res is not None and res.returncode == 0 and res.stdout.strip() in (
+        "active", "activating", "reloading", "deactivating")
 
 
 def pgrp_has_live(pgid):
@@ -169,12 +156,9 @@ def pgrp_has_live(pgid):
         return False
     except PermissionError:
         return True
-    for name in os.listdir("/proc"):
-        if name.isdigit():
-            info = proc_stat(name)
-            if info is not None and info[0] not in ("Z", "X") and info[1] == pgid:
-                return True
-    return False
+    return any(
+        (info := proc_stat(n)) is not None and info[0] not in ("Z", "X") and info[1] == pgid
+        for n in os.listdir("/proc") if n.isdigit())
 
 
 def wait_until(done, seconds, step=0.05):
@@ -196,40 +180,64 @@ def last_line(path):
     return next((line.strip()[-200:] for line in reversed(lines) if line.strip()), "")
 
 
-def scopes_work():
-    """True if `systemd-run --user --scope` works here (a user manager on the bus)."""
-    try:
-        return subprocess.run(
-            ["systemd-run", "--user", "--scope", "--quiet", "--collect",
-             f"--property=TimeoutStopSec={int(STOP_TIMEOUT)}s", "true"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=10).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
+def job_running(job):
+    if not isinstance(job, dict) or job["boot_id"] != BOOT_ID:
         return False
+    unit = expected_unit(job)
+    return proc_start_time(job["pid"]) == job["start_time"] or (bool(unit) and unit_active(unit))
+
+
+def load_job(log):
+    log = os.path.abspath(log)
+    if log.endswith(JOB_SUFFIX):
+        return err(f"log path must not end in {JOB_SUFFIX}: {log}", BAD_INPUT)
+    job = read_job(log)
+    return err(f"no job for {log}", BAD_INPUT) if job is None else (log, job)
 
 
 def supervise(log, unit, command):
-    """Record this supervisor's identity, run the job, and store its exit status."""
+    """Record identity, await parent's go-ahead on fd 3, run job, and store exit."""
     record = {"pid": os.getpid(), "start_time": proc_start_time(os.getpid()),
-              "boot_id": boot_id(), "unit": unit, "exit": None}
+              "boot_id": BOOT_ID, "unit": unit, "exit": None}
+    wrote, go = False, b""
     try:
-        write_json(job_path(log), record)
+        # Abort before touching LOG.job if parent already closed fd 3 (timeout/cancel).
+        if not select.select([3], [], [], 0)[0]:
+            try:
+                write_json(log + JOB_SUFFIX, record)
+                wrote = True
+            except OSError as error:
+                os.write(3, b"B" + str(error).encode()[:200])
+                return
+            os.write(3, b"R")
+            go = os.read(3, 1)
+    except OSError:
+        pass
+    finally:
+        with suppress(OSError):
+            os.close(3)
+    if go != b"G":
+        if wrote and same_job(read_job(log), record):
+            with suppress(OSError):
+                os.unlink(log + JOB_SUFFIX)
+        return
+    try:
         rc = subprocess.call(command)
         record["exit"] = 128 - rc if rc < 0 else rc
-        # Don't clobber a newer job's record if the old log/record were deleted.
-        cur = read_job(log)
-        if isinstance(cur, dict) and cur["pid"] == record["pid"] and cur["start_time"] == record["start_time"]:
-            write_json(job_path(log), record)
+        # Don't clobber a replacement job if LOG and LOG.job were deleted mid-run.
+        if same_job(read_job(log), record):
+            write_json(log + JOB_SUFFIX, record)
     except OSError as error:
-        # Unknown command or unwritable sidecar: exit stays None, which wait
-        # reports as unknown (4), never as success.
         print(f"agent-wait: {error}", file=sys.stderr)
 
 
 def start(log, command):
     log = os.path.abspath(log)
+    if log.endswith(JOB_SUFFIX):
+        return err(f"log path must not end in {JOB_SUFFIX}: {log}", BAD_INPUT)
+    busy = f"job already running on {log}; wait or stop it first"
     if job_running(read_job(log)):
-        return err(f"job already running on {log}; wait or stop it first", BAD_INPUT)
+        return err(busy, BAD_INPUT)
     try:
         log_fd = open_regular(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT)
     except OSError as error:
@@ -240,73 +248,74 @@ def start(log, command):
         fcntl.flock(log_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         os.close(log_fd)
-        return err(f"job already running on {log}; wait or stop it first", BAD_INPUT)
+        return err(busy, BAD_INPUT)
     if job_running(read_job(log)):
         os.close(log_fd)
-        return err(f"job already running on {log}; wait or stop it first", BAD_INPUT)
+        return err(busy, BAD_INPUT)
 
     # Probed before forking: once the child execs systemd-run, a failure can't fall back.
-    in_scope = scopes_work()
-    try:
-        # Write the stub before truncating LOG so an unwritable directory fails
-        # without wiping an existing log, and parent can tell when supervise starts.
-        write_json(job_path(log), {"starting": os.getpid()})
-        os.ftruncate(log_fd, 0)
-    except OSError as error:
-        os.close(log_fd)
-        return err(error, BAD_INPUT)
-
+    probe = run_cmd(["systemd-run", "--user", "--scope", "--quiet", "--collect",
+                     f"--property=TimeoutStopSec={int(STOP_TIMEOUT)}s", "true"], timeout=10)
+    in_scope = probe is not None and probe.returncode == 0
+    parent_sock, child_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
     sys.stdout.flush()
     pid = os.fork()
     if pid:
-        # Wait until supervise writes LOG.job (which for scoped jobs happens
-        # after systemd-run has moved the process into its own scope).
-        child_exited = [False]
-
-        def child_ready():
-            job = read_job(log)
-            if isinstance(job, dict) and job["pid"] == pid:
-                return True
+        child_sock.close()
+        reply = b""
+        try:
             try:
-                done_pid, _ = os.waitpid(pid, os.WNOHANG)
-            except ChildProcessError:
-                done_pid = pid
-            if done_pid == pid:
-                child_exited[0] = True
-                return True
-            return False
-
-        wait_until(child_ready, 10, step=0.01)
-        job = read_job(log)
-        os.close(log_fd)
-        if not (isinstance(job, dict) and job["pid"] == pid):
-            if child_exited[0]:
+                ready, _, _ = select.select([parent_sock], [], [], START_TIMEOUT)
+                reply = parent_sock.recv(256) if ready else b""
+                if reply == b"R":
+                    # Truncate and refresh mtime after supervise wrote LOG.job and
+                    # before 'G', so wait never sees a stale log or mtime.
+                    os.ftruncate(log_fd, 0)
+                    os.utime(log_fd, None)
+                    parent_sock.sendall(b"G")
+                    print(log)
+                    return EXITED
+            except OSError:
+                reply = b""
+            finally:
+                parent_sock.close()
+            # Abort: socket is closed so the child cannot commit even if it wakes later.
+            def reaped():
                 try:
-                    with open(job_path(log)) as f:
-                        stub = json.load(f)
-                    if stub == {"starting": os.getpid()}:
-                        os.unlink(job_path(log))
-                except (OSError, ValueError):
-                    pass
+                    return os.waitpid(pid, os.WNOHANG)[0] == pid
+                except ChildProcessError:
+                    return True
+            if not wait_until(reaped, 0.2, step=0.02):
+                with suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGKILL)
+                wait_until(reaped, 0.5, step=0.02)
+            cur = read_job(log)
+            if isinstance(cur, dict) and cur["pid"] == pid and cur["boot_id"] == BOOT_ID:
+                with suppress(OSError):
+                    os.unlink(log + JOB_SUFFIX)
+            if reply.startswith(b"B"):
+                return err(reply[1:].decode(errors="replace") or f"cannot write {log}{JOB_SUFFIX}", BAD_INPUT)
             return err(f"supervisor failed to start; see {log}", FAILED)
-        print(log)
-        return EXITED
+        finally:
+            os.close(log_fd)
 
-    # Supervisor. A new session survives the harness killing the calling shell's
-    # process group; redirecting 0-2 away from harness pipes lets the tool call
-    # return immediately. Dup log_fd onto 1-2 before 0 in case log_fd == 0.
+    # Supervisor: new session survives harness process-group kills; redirecting
+    # 0-2 away from harness pipes lets the tool call return immediately.
+    parent_sock.close()
     os.setsid()
+    cs_fd = os.dup(child_sock.fileno()) if child_sock.fileno() in (0, 1, 2) else child_sock.fileno()
     os.dup2(log_fd, 1)
     os.dup2(log_fd, 2)
     os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
-    for fd in (0, 1, 2):
+    os.dup2(cs_fd, 3)
+    for fd in (0, 1, 2, 3):
         os.set_inheritable(fd, True)
-    os.closerange(3, os.sysconf("SC_OPEN_MAX"))
+    os.closerange(4, os.sysconf("SC_OPEN_MAX"))
     if in_scope:
         unit = f"agent-wait-{os.getpid()}-{proc_start_time(os.getpid())}.scope"
         try:
             # systemd-run --scope execs in place, preserving PID, start time,
-            # and the flock held on fds 1-2.
+            # the flock on fds 1-2, and the handshake socket on fd 3.
             os.execvp("systemd-run", [
                 "systemd-run", "--user", "--scope", "--quiet", "--collect",
                 f"--unit={unit}", f"--property=TimeoutStopSec={int(STOP_TIMEOUT)}s",
@@ -320,10 +329,10 @@ def start(log, command):
 
 
 def wait(log, stall_seconds, max_seconds):
-    log = os.path.abspath(log)
-    job = read_job(log)
-    if job is None:
-        return err(f"no job for {log}", BAD_INPUT)
+    loaded = load_job(log)
+    if isinstance(loaded, int):
+        return loaded
+    log, job = loaded
     try:
         fd = open_regular(log, os.O_RDONLY)
         info = os.fstat(fd)
@@ -333,35 +342,31 @@ def wait(log, stall_seconds, max_seconds):
     if job == "corrupt":
         return err(f"corrupt job record for {log}", FAILED)
 
-    signature = (info.st_size, info.st_mtime_ns)
-    # Stall age counts from the log's last change so repeated calls accumulate.
-    # Later changes use the monotonic clock; a future mtime counts as "now".
+    sig = (info.st_size, info.st_mtime_ns)
     changed_at = time.monotonic() - max(0.0, time.time() - info.st_mtime)
     started = time.monotonic()
 
     def finish(code, state, hint):
-        print("; ".join([
-            f"agent-wait: {log} {state} after {time.monotonic() - started:.0f}s",
-            f"log last changed {time.monotonic() - changed_at:.0f}s ago",
-            f"last line: {last_line(log)!r}", hint,
-        ]))
+        print(f"agent-wait: {log} {state} after {time.monotonic() - started:.0f}s; "
+              f"log last changed {time.monotonic() - changed_at:.0f}s ago; "
+              f"last line: {last_line(log)!r}; {hint}")
         return code
 
     while True:
-        if not pid_matches(job):
+        if job["boot_id"] != BOOT_ID or proc_start_time(job["pid"]) != job["start_time"]:
             latest = read_job(log)
-            status = latest["exit"] if isinstance(latest, dict) else None
+            if not same_job(latest, job):
+                return finish(FAILED, "exited", "log was reused for another job; original exit status unknown")
+            status = latest["exit"]
             if status == 0:
                 return finish(EXITED, "exited", "the job exited 0")
             hint = ("no exit status recorded; see the log, the job may still run"
                     if status is None else f"the job exited {status}")
             return finish(FAILED, "exited", hint)
-        try:
+        with suppress(OSError):
             info = os.stat(log)
-            if stat.S_ISREG(info.st_mode) and (info.st_size, info.st_mtime_ns) != signature:
-                signature, changed_at = (info.st_size, info.st_mtime_ns), time.monotonic()
-        except OSError:
-            pass  # A deleted log shows no progress.
+            if stat.S_ISREG(info.st_mode) and (info.st_size, info.st_mtime_ns) != sig:
+                sig, changed_at = (info.st_size, info.st_mtime_ns), time.monotonic()
         if time.monotonic() - changed_at >= stall_seconds:
             return finish(STALLED, "stalled", "report it with the job's state")
         if time.monotonic() - started >= max_seconds:
@@ -370,16 +375,15 @@ def wait(log, stall_seconds, max_seconds):
 
 
 def stop(log):
-    log = os.path.abspath(log)
-    job = read_job(log)
-    if job is None:
-        return err(f"no job for {log}", BAD_INPUT)
+    loaded = load_job(log)
+    if isinstance(loaded, int):
+        return loaded
+    log, job = loaded
     if job == "corrupt":
         return err(f"corrupt job record for {log}", FAILED)
 
-    same_boot = job["boot_id"] == boot_id()
-    pid, st = job["pid"], job["start_time"]
-    unit = job["unit"] if valid_unit(job) else ""
+    same_boot = job["boot_id"] == BOOT_ID
+    pid, st, unit = job["pid"], job["start_time"], expected_unit(job)
     info = proc_stat(pid) if same_boot else None
     pid_alive = info is not None and info[0] not in ("Z", "X") and info[2] == st
     zombie_pgrp = info is not None and info[0] in ("Z", "X") and info[2] == st and pgrp_has_live(pid)
@@ -393,26 +397,15 @@ def stop(log):
         return EXITED
 
     if scope_alive:
-        try:
-            subprocess.run(["systemctl", "--user", "stop", unit],
-                           stdin=subprocess.DEVNULL, capture_output=True, timeout=STOP_TIMEOUT + 10)
-        except (OSError, subprocess.TimeoutExpired):
-            try:
-                subprocess.run(["systemctl", "--user", "kill", "--kill-who=all", "-s", "SIGKILL", unit],
-                               stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-        if not wait_until(lambda: not unit_active(unit) and proc_start_time(pid) != st, 2):
+        res = run_cmd(["systemctl", "--user", "stop", unit], timeout=STOP_TIMEOUT + 10)
+        if (res is None or res.returncode != 0
+                or not wait_until(lambda: not unit_active(unit) and proc_start_time(pid) != st, 2)):
             return err(f"could not stop scope {unit} for {log}", FAILED)
         print(f"agent-wait: stopped {log}")
         return EXITED
 
-    # Fallback without a systemd scope: signal the supervisor's process group
-    # only after verifying its identity.
-    def still_up():
-        cur = proc_start_time(pid)
-        return cur == st or (cur is None and pgrp_has_live(pid))
-
+    # Fallback without a systemd scope: signal the verified process group.
+    still_up = lambda: (cur := proc_start_time(pid)) == st or (cur is None and pgrp_has_live(pid))
     for sig, wait_secs in ((signal.SIGTERM, STOP_TIMEOUT), (signal.SIGKILL, 2)):
         try:
             os.killpg(pid, sig)
@@ -428,7 +421,6 @@ def stop(log):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    # Internal: `start` re-runs itself with this inside its new scope.
     if argv[:1] == ["--supervise"]:
         if len(argv) < 5 or not argv[1] or argv[3] != "--":
             return err("--supervise needs LOG UNIT -- COMMAND [ARG ...]", BAD_INPUT)
@@ -436,24 +428,18 @@ def main(argv=None):
         return EXITED
 
     parser = argparse.ArgumentParser(
-        prog="agent-wait", usage=USAGE,
-        description=__doc__.split("\n\n")[1].replace("\n", " "),
+        prog="agent-wait", usage=USAGE, description=__doc__.split("\n\n")[1].replace("\n", " "),
         epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="subcommand", required=True)
-
     p_start = sub.add_parser("start", usage="agent-wait start LOG -- COMMAND [ARG ...]",
                              help="start COMMAND detached; print the absolute log path")
-    p_start.add_argument("log", help="the job's output file (also its handle)")
-
+    p_start.add_argument("log")
     p_wait = sub.add_parser("wait", help="wait for a started job in bounded steps")
-    p_wait.add_argument("log", help="the job's log path")
-    p_wait.add_argument("--stall-minutes", type=duration, default=15.0,
-                        help="report a stall after LOG is unchanged this long (default 15)")
-    p_wait.add_argument("--max-seconds", type=duration, default=540.0,
-                        help="return 124 after this long if the job still runs (default 540)")
-
+    p_wait.add_argument("log")
+    p_wait.add_argument("--stall-minutes", type=duration, default=15.0)
+    p_wait.add_argument("--max-seconds", type=duration, default=540.0)
     p_stop = sub.add_parser("stop", help="stop a started job (its scope, or its process group without systemd)")
-    p_stop.add_argument("log", help="the job's log path")
+    p_stop.add_argument("log")
 
     # Split `start LOG -- CMD...` before argparse so misplaced flags before `--`
     # fail cleanly and `--` is never silently eaten as a flag terminator.
