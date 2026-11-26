@@ -16,7 +16,6 @@ import fcntl
 import json
 import math
 import os
-import select
 import signal
 import socket
 import stat
@@ -45,7 +44,7 @@ exit codes:
 
 Limits: stall age carries across calls only through the log's mtime, so a
 future mtime restarts the count, a log deleted between calls gives 2, and
-deleting both LOG and LOG.job while a job runs lets a new start reuse the path.
+deleting LOG.job while a job runs is unsupported and can corrupt a replacement's record.
 """
 
 with open("/proc/sys/kernel/random/boot_id") as _f:
@@ -86,8 +85,7 @@ def write_json(path, data):
     tmp = f"{path}.{os.getpid()}.tmp"
     try:
         with open(tmp, "w") as f:
-            json.dump(data, f)
-            f.write("\n")
+            f.write(json.dumps(data) + "\n")
         os.replace(tmp, path)
     except BaseException:
         with suppress(OSError):
@@ -104,14 +102,13 @@ def read_job(log):
         return None
     except (OSError, ValueError):
         return "corrupt"
-    if not isinstance(data, dict):
-        return "corrupt"
-    pid, st, bid, unit, code = (data.get(k) for k in ("pid", "start_time", "boot_id", "unit", "exit"))
-    if (type(pid) is not int or pid <= 0 or not isinstance(st, str) or not st
-            or not isinstance(bid, str) or not bid or not isinstance(unit, str)
-            or (code is not None and type(code) is not int)):
-        return "corrupt"
-    return {"pid": pid, "start_time": st, "boot_id": bid, "unit": unit, "exit": code}
+    if isinstance(data, dict):
+        pid, st, bid, unit, code = (data.get(k) for k in ("pid", "start_time", "boot_id", "unit", "exit"))
+        if (type(pid) is int and pid > 0 and isinstance(st, str) and st
+                and isinstance(bid, str) and bid and isinstance(unit, str)
+                and (code is None or type(code) is int)):
+            return {"pid": pid, "start_time": st, "boot_id": bid, "unit": unit, "exit": code}
+    return "corrupt"
 
 
 def same_job(a, b):
@@ -144,8 +141,7 @@ def expected_unit(job):
 
 def unit_active(unit):
     res = run_cmd(["systemctl", "--user", "show", "-p", "ActiveState", "--value", unit])
-    return res is not None and res.returncode == 0 and res.stdout.strip() in (
-        "active", "activating", "reloading", "deactivating")
+    return bool(res and res.returncode == 0 and res.stdout.strip() in ("active", "activating", "reloading", "deactivating"))
 
 
 def pgrp_has_live(pgid):
@@ -156,9 +152,7 @@ def pgrp_has_live(pgid):
         return False
     except PermissionError:
         return True
-    return any(
-        (info := proc_stat(n)) is not None and info[0] not in ("Z", "X") and info[1] == pgid
-        for n in os.listdir("/proc") if n.isdigit())
+    return any((i := proc_stat(n)) and i[0] not in ("Z", "X") and i[1] == pgid for n in os.listdir("/proc") if n.isdigit())
 
 
 def wait_until(done, seconds, step=0.05):
@@ -188,11 +182,10 @@ def job_running(job):
 
 
 def load_job(log):
-    log = os.path.abspath(log)
-    if log.endswith(JOB_SUFFIX):
-        return err(f"log path must not end in {JOB_SUFFIX}: {log}", BAD_INPUT)
     job = read_job(log)
-    return err(f"no job for {log}", BAD_INPUT) if job is None else (log, job)
+    if job is None:
+        return err(f"no job for {log}", BAD_INPUT)
+    return err(f"corrupt job record for {log}", FAILED) if job == "corrupt" else job
 
 
 def supervise(log, unit, command):
@@ -201,19 +194,22 @@ def supervise(log, unit, command):
               "boot_id": BOOT_ID, "unit": unit, "exit": None}
     wrote, go = False, b""
     try:
-        # Abort before touching LOG.job if parent already closed fd 3 (timeout/cancel).
-        if not select.select([3], [], [], 0)[0]:
+        with socket.socket(fileno=3) as sock:
+            # BlockingIOError means parent is still waiting; EOF means it aborted.
+            try:
+                sock.recv(1, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+                return FAILED
+            except BlockingIOError:
+                pass
             try:
                 write_json(log + JOB_SUFFIX, record)
                 wrote = True
             except OSError as error:
-                os.write(3, b"B" + str(error).encode()[:200])
-                return
-            os.write(3, b"R")
-            go = os.read(3, 1)
+                sock.sendall(b"B" + str(error).encode()[:200])
+                return FAILED
+            sock.sendall(b"R")
+            go = sock.recv(1)
     except OSError:
-        pass
-    finally:
         with suppress(OSError):
             os.close(3)
     if go != b"G":
@@ -233,9 +229,6 @@ def supervise(log, unit, command):
 
 
 def start(log, command):
-    log = os.path.abspath(log)
-    if log.endswith(JOB_SUFFIX):
-        return err(f"log path must not end in {JOB_SUFFIX}: {log}", BAD_INPUT)
     busy = f"job already running on {log}; wait or stop it first"
     if job_running(read_job(log)):
         return err(busy, BAD_INPUT)
@@ -244,52 +237,51 @@ def start(log, command):
     except OSError as error:
         return err(error, BAD_INPUT)
     try:
-        # Held on log_fd and inherited on fds 1-2 across fork and systemd-run
-        # --scope so concurrent starts serialize and a running job blocks reuse.
-        fcntl.flock(log_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        os.close(log_fd)
-        return err(busy, BAD_INPUT)
-    if job_running(read_job(log)):
-        os.close(log_fd)
-        return err(busy, BAD_INPUT)
-
-    # Probed before forking: once the child execs systemd-run, a failure can't fall back.
-    probe = run_cmd(["systemd-run", "--user", "--scope", "--quiet", "--collect",
-                     f"--property=TimeoutStopSec={int(STOP_TIMEOUT)}s", "true"], timeout=10)
-    in_scope = probe is not None and probe.returncode == 0
-    parent_sock, child_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
-    if sys.stdout is not None:
-        sys.stdout.flush()
-    pid = os.fork()
-    if pid:
-        child_sock.close()
-        child_info = proc_stat(pid)
-        child_id = {"pid": pid, "start_time": child_info[2] if child_info else "", "boot_id": BOOT_ID}
-        reply = b""
         try:
+            # Held on log_fd and inherited on fds 1-2 across fork and systemd-run
+            # --scope so concurrent starts serialize and a running job blocks reuse.
+            fcntl.flock(log_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return err(busy, BAD_INPUT)
+        if job_running(read_job(log)):
+            return err(busy, BAD_INPUT)
+
+        # Probed before forking: once the child execs systemd-run, a failure can't fall back.
+        probe = run_cmd(["systemd-run", "--user", "--scope", "--quiet", "--collect",
+                         f"--property=TimeoutStopSec={int(STOP_TIMEOUT)}s", "true"], timeout=10)
+        in_scope = bool(probe and probe.returncode == 0)
+        parent_sock, child_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+        with suppress(AttributeError, OSError):
+            sys.stdout.flush()
+        pid = os.fork()
+        if pid:
+            child_sock.close()
+            child_id = {"pid": pid, "start_time": (proc_stat(pid) or ("", 0, ""))[2], "boot_id": BOOT_ID}
+            reply, committed = b"", False
             try:
-                ready, _, _ = select.select([parent_sock], [], [], START_TIMEOUT)
-                reply = parent_sock.recv(256) if ready else b""
+                parent_sock.settimeout(START_TIMEOUT)
+                reply = parent_sock.recv(256)
                 if reply == b"R":
                     # Truncate and refresh mtime after supervise wrote LOG.job and
                     # before 'G', so wait never sees a stale log or mtime.
                     os.ftruncate(log_fd, 0)
                     os.utime(log_fd, None)
                     parent_sock.sendall(b"G")
-                    if sys.stdout is not None:
-                        print(log)
-                    return EXITED
+                    committed = True
             except OSError:
                 reply = b""
             finally:
                 parent_sock.close()
+            if committed:
+                # Committed: a stdout error (e.g. /dev/full) must not abort or unlink LOG.job.
+                with suppress(OSError):
+                    os.write(1, (log + "\n").encode())
+                return EXITED
             # Abort: socket is closed so the child cannot commit even if it wakes later.
             def reaped():
-                try:
+                with suppress(ChildProcessError):
                     return os.waitpid(pid, os.WNOHANG)[0] == pid
-                except ChildProcessError:
-                    return True
+                return True
             if not wait_until(reaped, 0.2, step=0.02):
                 with suppress(ProcessLookupError):
                     os.kill(pid, signal.SIGKILL)
@@ -300,23 +292,19 @@ def start(log, command):
             if reply.startswith(b"B"):
                 return err(reply[1:].decode(errors="replace") or f"cannot write {log}{JOB_SUFFIX}", BAD_INPUT)
             return err(f"supervisor failed to start; see {log}", FAILED)
-        finally:
+    finally:
+        if "pid" not in locals() or pid:
             os.close(log_fd)
 
-    # Supervisor: new session survives harness process-group kills; redirecting
-    # 0-2 away from harness pipes lets the tool call return immediately.
+    # Supervisor: new session survives harness process-group kills; move both
+    # fds above 0-3 first so dup2 onto 0-3 can't clobber them when stdio is closed.
     parent_sock.close()
     os.setsid()
-    # Move both fds above 0-3 first so dup2 onto 0-3 can't clobber either when
-    # the caller invoked us with closed stdio descriptors.
     log_fd = fcntl.fcntl(log_fd, fcntl.F_DUPFD, 4)
     cs_fd = fcntl.fcntl(child_sock.fileno(), fcntl.F_DUPFD, 4)
-    os.dup2(log_fd, 1)
-    os.dup2(log_fd, 2)
-    os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
-    os.dup2(cs_fd, 3)
-    for fd in (0, 1, 2, 3):
-        os.set_inheritable(fd, True)
+    for dst, src in ((1, log_fd), (2, log_fd), (0, os.open(os.devnull, os.O_RDONLY)), (3, cs_fd)):
+        os.dup2(src, dst)
+        os.set_inheritable(dst, True)
     os.closerange(4, os.sysconf("SC_OPEN_MAX"))
     if in_scope:
         unit = f"agent-wait-{os.getpid()}-{proc_start_time(os.getpid())}.scope"
@@ -336,18 +324,14 @@ def start(log, command):
 
 
 def wait(log, stall_seconds, max_seconds):
-    loaded = load_job(log)
-    if isinstance(loaded, int):
-        return loaded
-    log, job = loaded
     try:
-        fd = open_regular(log, os.O_RDONLY)
-        info = os.fstat(fd)
-        os.close(fd)
+        with os.fdopen(open_regular(log, os.O_RDONLY), "rb") as f:
+            info = os.fstat(f.fileno())
     except OSError as error:
         return err(f"bad log: {error}", BAD_INPUT)
-    if job == "corrupt":
-        return err(f"corrupt job record for {log}", FAILED)
+    job = load_job(log)
+    if isinstance(job, int):
+        return job
 
     sig = (info.st_size, info.st_mtime_ns)
     changed_at = time.monotonic() - max(0.0, time.time() - info.st_mtime)
@@ -384,12 +368,9 @@ def wait(log, stall_seconds, max_seconds):
 
 
 def stop(log):
-    loaded = load_job(log)
-    if isinstance(loaded, int):
-        return loaded
-    log, job = loaded
-    if job == "corrupt":
-        return err(f"corrupt job record for {log}", FAILED)
+    job = load_job(log)
+    if isinstance(job, int):
+        return job
 
     same_boot = job["boot_id"] == BOOT_ID
     pid, st, unit = job["pid"], job["start_time"], expected_unit(job)
@@ -398,20 +379,26 @@ def stop(log):
     zombie_pgrp = info is not None and info[0] in ("Z", "X") and info[2] == st and pgrp_has_live(pid)
     scope_alive = same_boot and bool(unit) and unit_active(unit)
 
-    if not pid_alive and not zombie_pgrp and not scope_alive:
-        if same_boot and not unit and info is None and job["exit"] is None and pgrp_has_live(pid):
-            return err(f"supervisor gone, but process group {pid} still has live processes for {log}", FAILED)
-        detail = f"exit {job['exit']}" if job["exit"] is not None else "status unknown"
+    def report_ended(record):
+        detail = f"exit {record['exit']}" if record["exit"] is not None else "status unknown"
         print(f"agent-wait: {log} already exited ({detail})")
         return EXITED
 
+    if not pid_alive and not zombie_pgrp and not scope_alive:
+        if same_boot and not unit and info is None and job["exit"] is None and pgrp_has_live(pid):
+            return err(f"supervisor gone, but process group {pid} still has live processes for {log}", FAILED)
+        return report_ended(job)
+
     if scope_alive:
         res = run_cmd(["systemctl", "--user", "stop", unit], timeout=STOP_TIMEOUT + 10)
-        if (res is None or res.returncode != 0
-                or not wait_until(lambda: not unit_active(unit) and proc_start_time(pid) != st, 2)):
-            return err(f"could not stop scope {unit} for {log}", FAILED)
-        print(f"agent-wait: stopped {log}")
-        return EXITED
+        stopped = wait_until(lambda: not unit_active(unit) and proc_start_time(pid) != st, 2)
+        if stopped and res is not None and res.returncode == 0:
+            print(f"agent-wait: stopped {log}")
+            return EXITED
+        if stopped:
+            latest = read_job(log)
+            return report_ended(latest if same_job(latest, job) else job)
+        return err(f"could not stop scope {unit} for {log}", FAILED)
 
     # Fallback without a systemd scope: signal the verified process group.
     still_up = lambda: (cur := proc_start_time(pid)) == st or (cur is None and pgrp_has_live(pid))
@@ -441,13 +428,12 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="subcommand", required=True)
     p_start = sub.add_parser("start", usage="agent-wait start LOG -- COMMAND [ARG ...]",
                              help="start COMMAND detached; print the absolute log path")
-    p_start.add_argument("log")
     p_wait = sub.add_parser("wait", help="wait for a started job in bounded steps")
-    p_wait.add_argument("log")
     p_wait.add_argument("--stall-minutes", type=duration, default=15.0)
     p_wait.add_argument("--max-seconds", type=duration, default=540.0)
     p_stop = sub.add_parser("stop", help="stop a started job (its scope, or its process group without systemd)")
-    p_stop.add_argument("log")
+    for p in (p_start, p_wait, p_stop):
+        p.add_argument("log")
 
     # Split `start LOG -- CMD...` before argparse so misplaced flags before `--`
     # fail cleanly and `--` is never silently eaten as a flag terminator.
@@ -460,13 +446,16 @@ def main(argv=None):
             argv, command = ["start", *rest[:sep]], rest[sep + 1:]
 
     args = parser.parse_args(argv)
+    log = os.path.abspath(args.log)
+    if log.endswith(JOB_SUFFIX) or os.path.realpath(log).endswith(JOB_SUFFIX):
+        return err(f"log path must not end in {JOB_SUFFIX}: {log}", BAD_INPUT)
     if args.subcommand == "start":
         if not command:
             p_start.error("start needs LOG -- COMMAND [ARG ...]")
-        return start(args.log, command)
+        return start(log, command)
     if args.subcommand == "wait":
-        return wait(args.log, args.stall_minutes * 60, args.max_seconds)
-    return stop(args.log)
+        return wait(log, args.stall_minutes * 60, args.max_seconds)
+    return stop(log)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 
 import json
 import os
+import resource
 import shutil
 import signal
 import subprocess
@@ -297,6 +298,66 @@ class AgentWaitTest(unittest.TestCase):
         # Direct --supervise without fd 3 handshake must fail, not exit 0.
         manual = self.run_aw("--supervise", self.log, "", "--", "true")
         self.assertEqual(manual.returncode, JOB_FAILED)
+
+    def test_start_with_full_stdout_commits_job_and_keeps_record(self):
+        with open("/dev/full", "wb") as full:
+            res = subprocess.run(
+                [sys.executable, AGENT_WAIT, "start", self.log, "--", "sh", "-c", "echo ok"],
+                stdout=full, stderr=subprocess.PIPE, text=True, timeout=30)
+        self.assertEqual(res.returncode, EXITED, res.stderr)
+        self.assertEqual(self.run_aw("wait", self.log).returncode, EXITED)
+
+    def test_rejects_symlink_pointing_to_job_suffix(self):
+        alias = os.path.join(self.tmp.name, "alias")
+        os.symlink(os.path.join(self.tmp.name, "build.job"), alias)
+        self.assertEqual(self.run_aw("start", alias, "--", "true").returncode, BAD_INPUT)
+        self.assertEqual(self.run_aw("wait", alias).returncode, BAD_INPUT)
+        self.assertEqual(self.run_aw("stop", alias).returncode, BAD_INPUT)
+
+    def test_stop_returns_exited_if_job_ends_during_failed_systemctl_stop(self):
+        log = self.start_job("true")
+        self.assertEqual(self.run_aw("wait", log).returncode, EXITED)
+        job = self.read_job(log)
+        if not job["unit"]:
+            # Synthesize a valid scope unit name when running without systemd.
+            job["unit"] = f"agent-wait-{job['pid']}-{job['start_time']}.scope"
+            with open(log + ".job", "w") as f:
+                json.dump(job, f)
+        fake_bin = os.path.join(self.tmp.name, "fake-systemctl")
+        os.mkdir(fake_bin)
+        stamp = os.path.join(self.tmp.name, "saw-active")
+        shim = os.path.join(fake_bin, "systemctl")
+        with open(shim, "w") as f:
+            f.write(
+                "#!/bin/sh\n"
+                "case \"$*\" in\n"
+                "  *show*)\n"
+                f"    if [ ! -e {stamp!r} ]; then touch {stamp!r}; echo active; else echo inactive; fi\n"
+                "    exit 0 ;;\n"
+                "  *stop*) exit 5 ;;\n"
+                "esac\n"
+            )
+        os.chmod(shim, 0o755)
+        env = dict(os.environ, PATH=f"{fake_bin}:{os.environ.get('PATH', '')}")
+        self.assertEqual(self.run_aw("stop", log, env=env).returncode, EXITED)
+
+    def test_start_succeeds_with_socket_fd_above_1024(self):
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        if hard < 1100:
+            self.skipTest("RLIMIT_NOFILE hard limit below 1100")
+
+        def fill_fds():
+            if soft < 1200:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (min(1200, hard), hard))
+            dn = os.open(os.devnull, os.O_RDONLY)
+            for _ in range(1030):
+                os.set_inheritable(os.dup(dn), True)
+
+        res = subprocess.run(
+            [sys.executable, AGENT_WAIT, "start", self.log, "--", "true"],
+            preexec_fn=fill_fds, close_fds=False, capture_output=True, text=True, timeout=30)
+        self.assertEqual(res.returncode, EXITED, res.stderr)
+        self.assertEqual(self.run_aw("wait", self.log).returncode, EXITED)
 
     def test_stop_on_already_ended_job_returns_exited(self):
         log = self.start_job("true")
