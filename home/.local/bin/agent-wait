@@ -220,7 +220,7 @@ def supervise(log, unit, command):
         if wrote and same_job(read_job(log), record):
             with suppress(OSError):
                 os.unlink(log + JOB_SUFFIX)
-        return
+        return FAILED
     try:
         rc = subprocess.call(command)
         record["exit"] = 128 - rc if rc < 0 else rc
@@ -229,6 +229,7 @@ def supervise(log, unit, command):
             write_json(log + JOB_SUFFIX, record)
     except OSError as error:
         print(f"agent-wait: {error}", file=sys.stderr)
+    return EXITED
 
 
 def start(log, command):
@@ -258,10 +259,13 @@ def start(log, command):
                      f"--property=TimeoutStopSec={int(STOP_TIMEOUT)}s", "true"], timeout=10)
     in_scope = probe is not None and probe.returncode == 0
     parent_sock, child_sock = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
-    sys.stdout.flush()
+    if sys.stdout is not None:
+        sys.stdout.flush()
     pid = os.fork()
     if pid:
         child_sock.close()
+        child_info = proc_stat(pid)
+        child_id = {"pid": pid, "start_time": child_info[2] if child_info else "", "boot_id": BOOT_ID}
         reply = b""
         try:
             try:
@@ -273,7 +277,8 @@ def start(log, command):
                     os.ftruncate(log_fd, 0)
                     os.utime(log_fd, None)
                     parent_sock.sendall(b"G")
-                    print(log)
+                    if sys.stdout is not None:
+                        print(log)
                     return EXITED
             except OSError:
                 reply = b""
@@ -289,8 +294,7 @@ def start(log, command):
                 with suppress(ProcessLookupError):
                     os.kill(pid, signal.SIGKILL)
                 wait_until(reaped, 0.5, step=0.02)
-            cur = read_job(log)
-            if isinstance(cur, dict) and cur["pid"] == pid and cur["boot_id"] == BOOT_ID:
+            if child_id["start_time"] and same_job(read_job(log), child_id):
                 with suppress(OSError):
                     os.unlink(log + JOB_SUFFIX)
             if reply.startswith(b"B"):
@@ -303,7 +307,10 @@ def start(log, command):
     # 0-2 away from harness pipes lets the tool call return immediately.
     parent_sock.close()
     os.setsid()
-    cs_fd = os.dup(child_sock.fileno()) if child_sock.fileno() in (0, 1, 2) else child_sock.fileno()
+    # Move both fds above 0-3 first so dup2 onto 0-3 can't clobber either when
+    # the caller invoked us with closed stdio descriptors.
+    log_fd = fcntl.fcntl(log_fd, fcntl.F_DUPFD, 4)
+    cs_fd = fcntl.fcntl(child_sock.fileno(), fcntl.F_DUPFD, 4)
     os.dup2(log_fd, 1)
     os.dup2(log_fd, 2)
     os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
@@ -356,7 +363,9 @@ def wait(log, stall_seconds, max_seconds):
         if job["boot_id"] != BOOT_ID or proc_start_time(job["pid"]) != job["start_time"]:
             latest = read_job(log)
             if not same_job(latest, job):
-                return finish(FAILED, "exited", "log was reused for another job; original exit status unknown")
+                reason = ("log was reused for another job; original exit status unknown"
+                          if isinstance(latest, dict) else "job record missing or unreadable")
+                return finish(FAILED, "exited", reason)
             status = latest["exit"]
             if status == 0:
                 return finish(EXITED, "exited", "the job exited 0")
@@ -424,8 +433,7 @@ def main(argv=None):
     if argv[:1] == ["--supervise"]:
         if len(argv) < 5 or not argv[1] or argv[3] != "--":
             return err("--supervise needs LOG UNIT -- COMMAND [ARG ...]", BAD_INPUT)
-        supervise(argv[1], argv[2], argv[4:])
-        return EXITED
+        return supervise(argv[1], argv[2], argv[4:])
 
     parser = argparse.ArgumentParser(
         prog="agent-wait", usage=USAGE, description=__doc__.split("\n\n")[1].replace("\n", " "),

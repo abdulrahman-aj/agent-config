@@ -286,6 +286,18 @@ class AgentWaitTest(unittest.TestCase):
         self.assertEqual(res.returncode, EXITED, res.stderr)
         self.assertEqual(self.run_aw("wait", self.log).returncode, EXITED)
 
+    def test_start_succeeds_with_closed_stdio_and_manual_supervise_fails(self):
+        # Reproduces closed 0/1/2 where log_fd and socketpair land on low fds.
+        res = subprocess.run(
+            [sys.executable, AGENT_WAIT, "start", self.log, "--", "true"],
+            preexec_fn=lambda: [os.close(fd) for fd in (0, 1, 2)],
+            timeout=30)
+        self.assertEqual(res.returncode, EXITED)
+        self.assertEqual(self.run_aw("wait", self.log).returncode, EXITED)
+        # Direct --supervise without fd 3 handshake must fail, not exit 0.
+        manual = self.run_aw("--supervise", self.log, "", "--", "true")
+        self.assertEqual(manual.returncode, JOB_FAILED)
+
     def test_stop_on_already_ended_job_returns_exited(self):
         log = self.start_job("true")
         self.assertEqual(self.run_aw("wait", log).returncode, EXITED)
