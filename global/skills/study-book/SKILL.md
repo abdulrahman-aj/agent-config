@@ -15,10 +15,12 @@ below.
    it. Workers report unverified success, so read changes to checks and tests first,
    then prose line by line. Cheaper writers leave mannered lines, recaps, hedged claims,
    dropped explanations and confident wrong asides. Fix for the reader, not less work.
-2. **Nothing is true until it ran.** Print only real run output, trimmed never edited,
-   including sentence fragments and illustrative lines. Check claims against primary
-   sources at the named version and definitions against the original author. Guarantees
-   need a reproduction that fails without the mechanism, in worked designs and labs.
+2. **Nothing is true until verified.** Check software claims by running them and print
+   only real run output, trimmed never edited, including sentence fragments and
+   illustrative lines. Check other claims against primary sources at the named edition
+   or version, by working the derivation, or by performing the procedure, and check
+   definitions against the original author. A guarantee needs a reproduction or
+   counterexample that fails without the mechanism, in worked designs and labs.
 3. **Strong models gate, cheaper ones filter.** Cheap fact-checkers missed must-fix
    errors in new prose every round. A strong reviewer checks risky designs before you
    build them and gates every new section and guarantee. For judgment work such as
@@ -30,17 +32,17 @@ below.
    matter, describing the book as it is and never promising unwritten chapters. Reader
    background sets examples and depth, never which needed topics stay. The page budget
    is a ceiling, pagination is fixed in layout not content, and narrower framing such as
-   naming one layer in a whole-system book is a scope bug.
+   naming one part in a book about the whole is a scope bug.
 6. **Content before form.** Tables, lists or headings chosen for rigor get filled to
    fit. Keep a column or item only if deleting it loses an answer to a reader question.
 
 ## Scope and plan
 
 - Load `grill-me`. Settle background, what must stick months later after details fade,
-  priority-ordered can-do goals, page and hour budget, real cases, where exercises run
-  and must not touch, screen or print, and allowed models per role. Survey the field
-  yourself, propose a chapter TOC with can-do takeaways, budgets and exclusions, end on
-  approval, and record everything in a plan file every brief cites.
+  priority-ordered can-do goals, page and hour budget, real cases, where exercises take
+  place and must not touch, screen or print, and allowed models per role. Survey the
+  field yourself, propose a chapter TOC with can-do takeaways, budgets and exclusions,
+  end on approval, and record everything in a plan file every brief cites.
 - Give each book a private repository with `book/`, plus `lab/` for runnable labs, and
   ship the PDF as a release asset when hosted. Source material never enters the repo.
 - If shared, describe the reader as a group and quote other books briefly inside your
@@ -88,29 +90,30 @@ below.
   every section.
 - Build the mechanism until the reader can predict the outcome. Target predictions at
   the section's central mechanism, have the reader write the prediction down, resolve it
-  right away with the trace explaining why a plausible wrong prediction fails, and put
-  your position after its reasons with its cost and flip threshold.
+  right away with the result or trace explaining why a plausible wrong prediction fails,
+  and put your position after its reasons with its cost and flip threshold.
 - Work a mechanism in full the first time, fade to a partial walkthrough later, then
   pose it as a problem for the reader. Compare two cases side by side and ask what they
   share before stating a principle.
-- Nothing before an exercise's or question's answer may give it away, code comments
-  included; blind readers flagged prompts whose answer was already in view.
+- Nothing before an exercise's or question's answer may give it away, code comments and
+  labels included; blind readers flagged prompts whose answer was already in view.
 - Questions and cases ask the reader to produce a work-shaped answer in an unseen
   scenario, such as explaining, diagnosing or deciding with its cost, never picking an
   option or defining a term, and later chapters re-ask earlier chapters' must-stick
   ideas. Answers explain why the right answer holds and why the plausible wrong one
   fails, rather than restating the chapter body.
 - Fix dense or stumbling passages with a worked example, a compact table or an annotated
-  output line, not more prose caveats.
-- Draw a small SVG diagram when prose tracks a timeline, an interleaving, state
-  transitions or a multi-hop flow; put labels inside the diagram and place explanation
-  next to the diagram or code it explains.
+  example or output line, not more prose caveats.
+- Draw a small SVG diagram when prose tracks a timeline, state transitions, an
+  interleaving or a multi-step flow; put labels inside the diagram and place explanation
+  next to the diagram, equation or code it explains.
 - Gloss specialist terms and forward references in one clause on first use so the reader
   can keep reading without flipping ahead.
 - Run `unslop` over every new passage before committing, then reread every new table
   cell, caption, diagram label and shortened sentence for every, any, only or always,
-  a single outcome where the real one depends on a race or a commit, one tool's behavior
-  stated as the standard's, and summaries that drop the conditions making a claim true.
+  a single outcome where the real one depends on conditions such as a race or a commit,
+  one tool's or case's behavior stated as a general rule, and summaries that drop the
+  conditions making a claim true.
 
 ## Review and finish
 
@@ -137,9 +140,9 @@ below.
   read as slogans.
 - Before release, run a cross-chapter contradiction sweep over thresholds, ratings,
   glossary definitions, cross-reference targets and universal claims.
-- Replay every printed command mechanically against its printed output and exit status,
-  and before release verify the book from a fresh clone and fresh state through its
-  printed setup.
+- When the book prints commands or code, replay every printed command mechanically
+  against its printed output and exit status, and before release verify the book from a
+  fresh clone and fresh state through its printed setup.
 - The book is done when every range is reviewed, no supported blocker or major finding
   remains, and the blind read has no "must fix".
 
