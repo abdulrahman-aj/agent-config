@@ -45,7 +45,7 @@ record="$(record_path "$target")"
 # Everywhere a managed link can live, stowed ones included: stow refuses to
 # replace links into a moved or re-cloned checkout, so the sweep must find them.
 # ~/.gemini holds agy's own state, so only our two paths there are swept.
-roots=(.agents .claude .codex .config/opencode .config/environment.d .gemini/AGENTS.md .gemini/config/skills .local/bin .t3)
+roots=(.agents .claude .codex .config/opencode .config/environment.d .gemini/AGENTS.md .gemini/config/skills .local/bin .local/libexec .t3)
 acted=0
 # TARGET paths slated for removal in --check mode (already gone on install).
 # The conflict check must evaluate post-clean state, not pre-clean.

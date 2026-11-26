@@ -15,7 +15,6 @@ import getpass
 import hashlib
 import json
 import os
-import re
 import secrets
 import shlex
 import signal
@@ -35,6 +34,7 @@ GRACE = 10  # seconds between SIGTERM and SIGKILL for a job's process group
 FAILED = 255  # heavy's own failures; the job didn't run or its status was lost
 DENIED = object()  # peer began denying before the remote job started
 MARK = f"\x1eheavy-{secrets.token_hex(8)} ".encode()  # per-run protocol prefix on stderr
+REMOTE_SH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "libexec", "heavy", "remote.sh")
 
 EPILOG = """\
 routing:
@@ -56,127 +56,15 @@ TERM/INT/HUP stops the job group (here or on peer) and runs .heavy-cleanup.
 A KILL leaves a local job running; a remote one stops when its ssh pipe closes.
 """
 
-# Checks login env, systemd user env, and environment.d so a deny in
-# ~/.config/environment.d/*.conf is seen even over non-session ssh.
-DENY_CHECK = r"""
-is_denied() {
-  [ "${AGENT_HEAVY_JOBS:-}" = deny ] && return 0
-  XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
-    systemctl --user show-environment 2>/dev/null | grep -qx 'AGENT_HEAVY_JOBS=deny' && return 0
-  for p in /usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator \
-           /lib/systemd/user-environment-generators/30-systemd-environment-d-generator; do
-    if [ -x "$p" ]; then "$p" 2>/dev/null | grep -qx 'AGENT_HEAVY_JOBS=deny'; return $?; fi
-  done
-  grep -qxs 'AGENT_HEAVY_JOBS=deny' "${XDG_CONFIG_HOME:-$HOME/.config}"/environment.d/*.conf
-}
-"""
-
-PROBE_SCRIPT = DENY_CHECK + "\nis_denied && exit 10\nexit 0\n"
-
-# Fed to `bash -l -s` on the peer (login shell may be fish; -l loads PATH).
-# Holds per-staging-dir lock (fd 8) from before rsync until --out copy-back ends
-# (stdin EOF). Braces make bash parse the whole script before executing it.
-REMOTE_SCRIPT = r"""{
-set -m  # job control: job gets its own process group so one kill reaches all of it
-mark() { (printf '\036{mark} %s\n' "$*" >&2) 8>&- 9>&-; }
-pfail() { [ -n "${1:-}" ] && echo "heavy: $1" >&2; mark prep-failed; exit 255; }
-{deny_check}
-if is_denied; then mark denied; exit 10; fi
-id={stage_id}; need_git={need_git}; root="$HOME/.cache/heavy/work"
-case "$id" in ''|*[!0-9a-f]*) pfail ;; esac
-for p in "$HOME/.cache" "$HOME/.cache/heavy" "$root" "$root/$id" "$root/$id/tree" \
-         "$root/$id/lock" "$root/$id/upload.lock" "$root/$id/run" ${need_git:+"$root/$id/git"}; do
-  [ -L "$p" ] && pfail "refusing symlink in staging path: $p"
-done
-mkdir -p -- "$root/$id/tree" || pfail
-if [ -n "$need_git" ]; then mkdir -p -- "$root/$id/git" || pfail; fi
-real_home=$(cd -P -- "$HOME" && pwd -P) || pfail
-real_root=$(cd -P -- "$root" && pwd -P) || pfail
-[ "$real_root" = "$real_home/.cache/heavy/work" ] || pfail "staging root $real_root outside $real_home/.cache/heavy/work"
-for sub in tree ${need_git:+git}; do
-  real_sub=$(cd -P -- "$root/$id/$sub" && pwd -P) || pfail
-  case "$real_sub" in "$real_root"/*) ;; *) pfail "staging path $real_sub outside $real_root" ;; esac
-done
-# Hold per-staging-dir lock on peer from before rsync until copy-back finishes.
-exec 8>"$root/$id/lock" || { mark lock-failed "$root/$id/lock"; exit 255; }
-while ! flock -n 8; do
-  read -r -t 0.5 _
-  [ $? -lt 128 ] && exit 143
-done
-printf '%s\n' {mark} > "$root/$id/run" || pfail
-# Drain any surviving rsync receiver from a killed prior run before accepting uploads.
-exec 7>"$root/$id/upload.lock" || { rm -f "$root/$id/run"; mark lock-failed "$root/$id/upload.lock"; exit 255; }
-while ! flock -n 7; do
-  read -r -t 0.5 _
-  [ $? -lt 128 ] && { rm -f "$root/$id/run"; exit 143; }
-done
-exec 7>&-
-mark ready
-read -r go || { rm -f "$root/$id/run"; exit 143; }
-rm -f "$root/$id/run"
-[ "$go" = go ] || exit 143
-stop() {
-  stopped=1
-  if [ -n "${pid:-}" ]; then
-    kill -TERM -- "-$pid" 2>/dev/null
-    (sleep {grace}; kill -KILL -- "-$pid" 2>/dev/null) 8>&- 9>&- >/dev/null 2>&1 &
-    timer=$!
-  fi
-}
-trap stop TERM INT HUP
-(cat >/dev/null; kill -TERM $$) 8>&- >/dev/null 2>&1 &
-watcher=$!
-fail() { mark "$@"; kill -- "-$watcher" 2>/dev/null; exit 255; }
-tree_path="$HOME"/{stage_tree}
-if [ -n {stage_gitdir} ]; then
-  gitdir_path="$HOME"/{stage_gitdir}
-  printf 'gitdir: %s\n' "$gitdir_path" > "$tree_path/.git"
-  [ -f "$gitdir_path/gitdir" ] && printf '%s/.git\n' "$tree_path" > "$gitdir_path/gitdir"
-fi
-# One slot per 10 GiB of host RAM (min 1): an 8 GiB VM or heavy build needs ~10 GiB with headroom.
-slots=$(awk '/^MemTotal:/ {s = int($2 / 10485760); print (s < 1 ? 1 : s)}' /proc/meminfo 2>/dev/null)
-slots=${slots:-1}
-lock_dir={lock_dir}; lock_dir=${lock_dir:-/tmp/heavy-$(id -u)}
-mkdir -m 700 -p -- "$lock_dir" || fail lock-failed "$lock_dir"
-while [ -z "${stopped:-}" ]; do
-  for slot in $(seq 1 "$slots"); do
-    # fd 9 holds the slot. Jobs get 8>&- 9>&- so daemons can't inherit either lock.
-    exec 9>"$lock_dir/slot-$slot.lock" || fail lock-failed "$lock_dir/slot-$slot.lock"
-    flock -n 9 && break 2
-  done
-  exec 9>&-
-  sleep 1
-done
-if [ -n "${stopped:-}" ]; then rc=143
-elif is_denied; then
-  mark denied; kill -- "-$watcher" 2>/dev/null; exit 10
-else
-  mark slot "$slot/$slots"
-  (cd "$HOME"/{stage_cwd} && exec bash -c -- {command}) 8>&- 9>&- </dev/null &
-  pid=$!
-  [ -n "${stopped:-}" ] && stop  # stop arrived between check and launch
-  while :; do
-    wait "$pid"; rc=$?
-    kill -0 "$pid" 2>/dev/null || break
-  done
-  kill -TERM -- "-$pid" 2>/dev/null
-  for _ in $(seq {grace_tenths}); do kill -0 -- "-$pid" 2>/dev/null || break; sleep 0.1; done
-  kill -KILL -- "-$pid" 2>/dev/null
-  [ -n "${timer:-}" ] && kill -- "-$timer" 2>/dev/null
-  mark job-done
-  if [ -f "$tree_path/.heavy-cleanup" ]; then
-    (cd "$tree_path" && bash .heavy-cleanup) 8>&- 9>&- </dev/null || mark cleanup-failed $?
-  fi
-fi
-kill -- "-$watcher" 2>/dev/null
-exec 9>&-
-mark exit "$rc"
-cat >/dev/null  # keep fd 8 held until client finishes --out copy-back and closes stdin
-exit "$rc"
-}
-"""
-
 stop_signal = None
+
+
+def remote_script(**env):
+    """Wrap remote.sh in `{ ... }` with shlex-quoted variable assignments for `bash -l -s`."""
+    with open(REMOTE_SH) as f:
+        body = f.read()
+    header = "".join(f"{k}={shlex.quote(v)}\n" for k, v in env.items())
+    return f"{header}{{\n{body}\n}}\n".encode()
 
 
 def write_stderr(data):
@@ -187,10 +75,6 @@ def write_stderr(data):
 
 def say(message):
     write_stderr(f"heavy: {message}\n".encode())
-
-
-def render(template, values):
-    return re.sub(r"\{([a-z_]+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
 
 
 def host_slots():
@@ -408,14 +292,12 @@ def run_remote(command, root, outs, peer, target, ssh_args):
             return FAILED
         rel_gitdir = os.path.relpath(gitdir, common)
         stage_gitdir = stage_git if rel_gitdir == "." else f"{stage_git}/{rel_gitdir}"
-    script = render(REMOTE_SCRIPT, {
-        "mark": MARK[1:-1].decode(), "deny_check": DENY_CHECK,
-        "stage_id": shlex.quote(sid), "need_git": "1" if mirror else "''",
-        "grace": str(GRACE), "grace_tenths": str(GRACE * 10),
-        "lock_dir": shlex.quote(os.environ.get("HEAVY_LOCK_DIR", "")),
-        "stage_cwd": shlex.quote(stage_cwd), "stage_tree": shlex.quote(stage_tree),
-        "stage_gitdir": shlex.quote(stage_gitdir), "command": shlex.quote(command),
-    })
+    script = remote_script(
+        mark=MARK[1:-1].decode(), id=sid, need_git="1" if mirror else "",
+        grace=str(GRACE), lock_dir=os.environ.get("HEAVY_LOCK_DIR", ""),
+        stage_cwd=stage_cwd, stage_tree=stage_tree, stage_gitdir=stage_gitdir,
+        command=command,
+    )
     rsh = shlex.join(ssh_args)
     # Own session keeps Ctrl-C or group kill off ssh so heavy closes stdin and still hears remote exit.
     ssh = subprocess.Popen([*ssh_args, target, "bash", "-l", "-s"],
@@ -425,7 +307,7 @@ def run_remote(command, root, outs, peer, target, ssh_args):
     pump.start()
     err_msg = None
     try:
-        write_stdin(ssh, script.encode())
+        write_stdin(ssh, script)
         while not ready.wait(0.2):
             if stop_signal is not None:
                 close_stdin(ssh)
@@ -606,7 +488,7 @@ def ssh_args_for(host, host_keys):
 
 def probe_peer(target, ssh_args):
     try:
-        return subprocess.run([*ssh_args, target, "bash", "-l", "-s"], input=PROBE_SCRIPT.encode(),
+        return subprocess.run([*ssh_args, target, "bash", "-l", "-s"], input=remote_script(mode="probe"),
                               capture_output=True, timeout=CONNECT_TIMEOUT + 2).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
