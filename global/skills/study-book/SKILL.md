@@ -57,14 +57,17 @@ below.
 - Admit a tool only for a decision existing material can't show; put losers on a "what
   this book leaves out" page with a checked source.
 - Decide teaching devices book-wide before drafting, because per-chapter choices drift.
-- Plan return use and unprompted transfer before drafting. Decide where the reader
-  combines chapters without a chapter heading naming the tool, such as part-end
-  synthesis cases or a capstone task, and how a returning reader enters with a job, such
-  as reading paths, a checklist or a symptom index.
-- Tell the reader in front matter to predict before exercises and answer prompts before
-  reading answers.
-- If core principles recur across chapters, introduce each unnamed in context, ask the
-  reader to compare and name it on a later meeting, and index them at the back.
+- Plan return use and unprompted transfer before drafting. Add mixed "which approach
+  fits?" review sets across chapters, such as part-end synthesis cases or a capstone
+  task, without interleaving explanations themselves. Design job-based entry paths where
+  returning readers start with recall questions and reread only what they missed, and
+  experienced readers skip to the problems.
+- Include a front-matter "how to use this book" note telling readers to predict before
+  exercises, answer prompts before looking, expect it to feel hard, and return to the
+  questions after a gap.
+- If core principles recur across chapters, introduce each unnamed in context, compare
+  cases to name it on a later meeting, index them at the back, and keep a recurring
+  model only if every reuse compares it to the new case.
 - Label every linked heading from the start and point glossary entries at sections.
 - If the book rates options, name labels after their test, never praise words, state
   each label's rule before the first entry, and have every rating say when it holds and
@@ -76,22 +79,31 @@ below.
 
 ## Write to teach
 
-- Every section, exercise and question serves a stated can-do goal and what must stick;
-  cut or move out material that serves none.
+- Every section, exercise, question and aside serves a stated can-do goal and what must
+  stick; cut interesting asides and detail that serve none.
 - Open each decision section with its crux question in plain prose, or set off visually
-  only for a chapter's key pivots. Never repeat a labelled opener in every section, and
-  never state the rule before the reader reasons about the problem.
-- Build the mechanism until the reader can predict the outcome, ask for a prediction
-  before showing the trace, and put your position after its reasons with its cost and
-  the evidence or threshold that would flip it.
+  only for a chapter's key pivots, as a short attempt followed by full explanation,
+  never discovery left to the reader. Never repeat a labelled opener in every section,
+  and never state the rule first.
+- Build the mechanism until the reader can predict the outcome. Target predictions at
+  the section's central mechanism, have the reader write the prediction down, resolve it
+  right away with the trace, and put your position after its reasons with its cost and
+  flip threshold.
+- Work a mechanism in full the first time, fade to a partial walkthrough later, then
+  pose it as a problem for the reader. Compare two cases side by side and ask what they
+  share before stating a principle.
 - Nothing before an exercise's or question's answer may give it away, code comments
   included; blind readers flagged prompts whose answer was already in view.
-- Recall questions and cases put the reader in an unseen scenario; answers name the
-  deciding force rather than restating the chapter body.
+- Questions and cases ask the reader to produce a work-shaped answer in an unseen
+  scenario, such as explaining, diagnosing or deciding with its cost, never picking an
+  option or defining a term, and later chapters re-ask earlier chapters' must-stick
+  ideas. Answers explain why the right answer holds and why the plausible wrong one
+  fails, rather than restating the chapter body.
 - Fix dense or stumbling passages with a worked example, a compact table or an annotated
   output line, not more prose caveats.
 - Draw a small SVG diagram when prose tracks a timeline, an interleaving, state
-  transitions or a multi-hop flow; strong models default to prose walls otherwise.
+  transitions or a multi-hop flow; put labels inside the diagram and place explanation
+  next to the diagram or code it explains.
 - Gloss specialist terms and forward references in one clause on first use so the reader
   can keep reading without flipping ahead.
 - Run `unslop` over every new passage before committing, then reread every new table
