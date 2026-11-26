@@ -39,7 +39,7 @@ If no agent started you and you delegate:
 * **In T3:**
   * Send follow-ups and re-checks to the child that did the work (`t3_thread_send`), not a new `delegate_task`, so it keeps its context. This overrides T3's own rule.
   * Never start a new child for work that a stalled or quota-failed child still holds; resume that child instead.
-  * After a quota failure, T3 usually resumes the child itself once the reset passes, with a run that says "Continue where you left off". Resume it yourself (`t3_thread_send`) only if, a few minutes after the reset, `task_status` and `t3_thread_list` show no run started since the failure. Otherwise your message is a second "continue".
+  * After a quota failure, T3 usually resumes the child itself once the reset passes, with a run that says "Continue where you left off". Resume it yourself (`t3_thread_send`) only if, a few minutes after the reset, `task_status` and `t3_thread_list` show no run started since the failure. Otherwise your message is a second "continue". If the failure reported no reset time, T3 won't resume the child, so resume it yourself once the quota is back.
   * Use `mode: "auto"`. It steers a running turn, so a correction can reach a long gate before its turn ends; otherwise it starts or queues the message. Use `mode: "queue"` for a separate next task.
   * Clear stale queued sends with `t3_queue`, not `task_cancel`, which stops the child's current work and its delegates even when the task ID you pass already finished.
 * While work remains, run independent work beside a blocked stream. End a turn only with a tracked child running, a picker question open or the task done.
