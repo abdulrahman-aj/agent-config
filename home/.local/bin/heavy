@@ -89,7 +89,11 @@ for p in "$HOME/.cache" "$HOME/.cache/heavy" "$root" "$root/$id" "$root/$id/tree
 done
 mkdir -p -- "$root/$id/tree"
 if [ -n "$need_git" ]; then mkdir -p -- "$root/$id/git"; fi
+real_home=$(cd -P -- "$HOME" && pwd -P)
 real_root=$(cd -P -- "$root" && pwd -P)
+[ "$real_root" = "$real_home/.cache/heavy/work" ] || {
+  echo "heavy: staging root $real_root is outside $real_home/.cache/heavy/work" >&2; exit 1
+}
 for sub in tree ${need_git:+git}; do
   real_sub=$(cd -P -- "$root/$id/$sub" && pwd -P)
   case "$real_sub" in "$real_root"/*) ;; *)
@@ -350,10 +354,12 @@ def run_remote(command, root, outs, peer, target, ssh_args):
         if (rc := subprocess.run([*ssh_args, target, "bash", "-s"], input=prep.encode()).returncode):
             return failed(f"preparing staging dir on {peer} failed (ssh exited {rc})")
         if mirror:
-            if (rc := subprocess.call(["rsync", "-a", "-e", rsh, "--delete", f"{mirror}/", f"{target}:{stage_git}/"])):
+            if (rc := subprocess.call(["rsync", "-a", "-s", "-e", rsh, "--delete", f"{mirror}/", f"{target}:{stage_git}/"])):
                 return failed(f"mirroring {mirror} failed (rsync {rc})")
+            if stop_signal is not None:
+                return 128 + stop_signal
         ignore = os.path.join(root, ".heavyignore")
-        rc = subprocess.call(["rsync", "-a", "-e", rsh, "--delete",
+        rc = subprocess.call(["rsync", "-a", "-s", "-e", rsh, "--delete",
                               *([f"--exclude-from={ignore}"] if os.path.isfile(ignore) else []),
                               f"{root}/", f"{target}:{stage_tree}/"])
         if rc:
@@ -453,7 +459,7 @@ def copy_back(out, stage_tree, real_root, peer, target, rsh):
     if path == ".git" or path.startswith(".git" + os.sep):
         say(f"--out {out}: refusing to overwrite .git, skipped")
         return
-    res = subprocess.run(["rsync", "-aR", "--update", "--exclude=.git", "--out-format=%n", "-e", rsh,
+    res = subprocess.run(["rsync", "-aRs", "--update", "--exclude=.git", "--out-format=%n", "-e", rsh,
                           f"{target}:{stage_tree}/./{path}", f"{real_root}/"], capture_output=True, text=True)
     if res.returncode == 23 and "No such file" in res.stderr:
         say(f"--out {out}: not on {peer} after the job")
@@ -472,20 +478,20 @@ def tailscale_peers():
         data = json.loads(res.stdout) if res.returncode == 0 else {}
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         return []
-    if data.get("BackendState") not in (None, "Running"):
+    if data.get("BackendState") != "Running":
         return []
     self_uid = (data.get("Self") or {}).get("UserID")
+    if self_uid is None:
+        return []
     suffix = (data.get("MagicDNSSuffix") or "").strip(".")
     peers = {}
     for p in (data.get("Peer") or {}).values():
         if not isinstance(p, dict) or not p.get("Online") or p.get("ShareeNode"):
             continue
-        if (p.get("OS") or "").lower() != "linux":
-            continue
-        if self_uid is not None and p.get("UserID") is not None and p["UserID"] != self_uid:
+        if (p.get("OS") or "").lower() != "linux" or p.get("UserID") != self_uid:
             continue
         dns = (p.get("DNSName") or "").rstrip(".")
-        if suffix and dns and not dns.endswith("." + suffix):
+        if suffix and not dns.endswith("." + suffix):
             continue
         ips = p.get("TailscaleIPs") or []
         host = dns or next((a for a in ips if ":" not in a), ips[0] if ips else "")

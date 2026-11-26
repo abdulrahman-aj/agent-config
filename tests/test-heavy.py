@@ -259,10 +259,10 @@ class HeavyTest(unittest.TestCase):
         self.git("worktree", "add", "-q", worktree)
         with open(os.path.join(worktree, ".git")) as f:
             orig_git = f.read()
-        job = "mkdir -p build && touch build/made ..dots && echo more >> tracked.txt"
-        self.assertEqual(self.run_heavy(job, "--out", ".", "--out", ".git", "--out", "missing",
-                                        remote=True, cwd=worktree), 0)
-        self.assertTrue(os.path.exists(os.path.join(worktree, "build", "made")))
+        job = 'mkdir -p "my dir" && touch "my dir/made file" ..dots && echo more >> tracked.txt'
+        self.assertEqual(self.run_heavy(job, "--out", ".", "--out", "my dir/made file", "--out", ".git",
+                                        "--out", "..", "--out", "missing", remote=True, cwd=worktree), 0)
+        self.assertTrue(os.path.exists(os.path.join(worktree, "my dir", "made file")))
         self.assertTrue(os.path.exists(os.path.join(worktree, "..dots")))
         with open(os.path.join(worktree, "tracked.txt")) as f:
             self.assertEqual(len(f.readlines()), 2)
