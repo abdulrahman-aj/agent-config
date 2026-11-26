@@ -9,7 +9,7 @@
 * **Abstractions.** Duplicate first. Abstract only when it reduces complexity.
 * **Locality of behavior.** Keep related code together.
 * **Comments.** Explain why, not what: rationale, invariants, performance and constraints.
-* **Shell.** Don't embed Python in `.sh` files. Write a `.py` file instead.
+* **Embedded scripts.** Don't put more than a few lines of one language in another's strings, such as Python in a `.sh` file or shell in a `.py` file. Give it its own file, and pass values as arguments or variables instead of templating them into the source.
 * **Chesterton's fence.** Understand why something exists before you remove it.
 
 # Testing
