@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Stands in for ssh in tests/test-heavy.py: runs the remote command on this machine,
-# in and with HOME=$HEAVY_FAKE_HOME, so the "remote" copy lands in a separate tree.
+# Stands in for ssh in tests/test-heavy.py: runs the remote command on this machine
+# with a per-peer HOME under $HEAVY_FAKE_PEERS/<host>, isolated from the caller's
+# AGENT_HEAVY_JOBS and systemd user session.
 while [[ ${1:-} == -* ]]; do
   case $1 in -o | -l | -p) shift 2 ;; *) shift ;; esac
 done
-shift  # the host
-cd "$HEAVY_FAKE_HOME" && HOME=$HEAVY_FAKE_HOME exec bash -c "$*"
+host=${1#*@}
+shift
+peer_home="$HEAVY_FAKE_PEERS/$host"
+[ -d "$peer_home" ] || exit 255
+unset AGENT_HEAVY_JOBS DBUS_SESSION_BUS_ADDRESS XDG_CONFIG_HOME
+export HOME="$peer_home" XDG_RUNTIME_DIR="$peer_home/.runtime"
+cd "$peer_home" && exec bash -c "$*"
