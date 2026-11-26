@@ -13,5 +13,5 @@ description: Machine specs, SSH and VM rules for zenbook-dux and msi-dux. Load b
 * Run builds, VMs and other long-running work on `msi-dux`, because it stays up when the laptop lid closes. Keep the laptop for work specific to it, such as dotfiles tests or its own services.
 * The laptop sets `AGENT_HEAVY_JOBS=deny`, and heavy make targets (such as arch-niri-dux builds and VMs) refuse to run while it is set. Check free RAM on `msi-dux` before starting a VM.
 * Run remote commands with `tailscale ssh abdulrahman@msi-dux "bash -lc '<command>'"`. Its login shell is fish, so `bash -l` loads the login PATH (`~/.local/bin`, Nix).
-* For long jobs there, run `agent-wait` on `msi-dux` itself (see `agent-wait --help`).
+* For long jobs there, run `agent-wait start LOG -- CMD`, `agent-wait wait LOG`, and `agent-wait stop LOG` on `msi-dux` itself (see `agent-wait --help`).
 * `msi-dux` runs T3 as a headless background service. Its desktop app can't start while the service runs, so open its threads from the laptop.

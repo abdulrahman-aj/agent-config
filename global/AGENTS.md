@@ -50,7 +50,7 @@ If another agent started you:
 
 * Don't use ask-user or picker tools, because they reach the user instead of the orchestrator. Ask by ending your turn with the question.
 * Delegate only reviews, and only to low-cost models from other families.
-* Don't end your turn while a shell job or harness background task you started is still running, even if your harness says it will wake you. Ending your turn hands control back to the orchestrator, and a background completion wake can still be missed. Run long jobs with `agent-wait` (see `agent-wait --help`). On exit 3 (stalled), end your turn and report the job's state and how to resume.
+* Don't end your turn while a shell job or harness background task you started is still running, even if your harness says it will wake you. Ending your turn hands control back to the orchestrator, and a background completion wake can still be missed. Run long jobs with `agent-wait start LOG -- CMD`, then `agent-wait wait LOG` (and `agent-wait stop LOG` to cancel; see `agent-wait --help`). On exit 3 (stalled), end your turn and report the job's state and how to resume.
 * If something you don't control (memory, a lock, a quota) blocks you for more than 10 minutes, end your turn and report it.
 
 # Model selection
