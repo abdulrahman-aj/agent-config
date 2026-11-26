@@ -78,50 +78,57 @@ is_denied() {
 
 PROBE_SCRIPT = DENY_CHECK + "\nis_denied && exit 10\nexit 0\n"
 
-# Creates the staging dir and refuses symlinked parents or any path resolving
-# outside ~/.cache/heavy/work before rsync --delete ever runs.
-PREPARE_SCRIPT = r"""
-set -e
-id={stage_id}; need_git={need_git}; root="$HOME/.cache/heavy/work"
-case "$id" in ''|*[!0-9a-f]*) echo "heavy: invalid staging id: $id" >&2; exit 1 ;; esac
-for p in "$HOME/.cache" "$HOME/.cache/heavy" "$root" "$root/$id" "$root/$id/tree" ${need_git:+"$root/$id/git"}; do
-  [ -L "$p" ] && { echo "heavy: refusing symlink in staging path: $p" >&2; exit 1; }
-done
-mkdir -p -- "$root/$id/tree"
-if [ -n "$need_git" ]; then mkdir -p -- "$root/$id/git"; fi
-real_home=$(cd -P -- "$HOME" && pwd -P)
-real_root=$(cd -P -- "$root" && pwd -P)
-[ "$real_root" = "$real_home/.cache/heavy/work" ] || {
-  echo "heavy: staging root $real_root is outside $real_home/.cache/heavy/work" >&2; exit 1
-}
-for sub in tree ${need_git:+git}; do
-  real_sub=$(cd -P -- "$root/$id/$sub" && pwd -P)
-  case "$real_sub" in "$real_root"/*) ;; *)
-    echo "heavy: staging path $real_sub is outside $real_root" >&2; exit 1 ;;
-  esac
-done
-"""
-
 # Fed to `bash -l -s` on the peer: login shells may not be POSIX (e.g. fish),
-# and -l loads the login PATH. Stdin stays open while local heavy lives, so EOF
-# means heavy stopped or died. Braces make bash parse the whole script first so
-# the watcher's cat doesn't swallow unread script lines.
+# and -l loads the login PATH. Stdin stays open while local heavy lives: after
+# emitting `ready` (staging verified + per-staging-dir lock held on fd 8), it
+# waits for a `go` line (sent after rsync) and then watches stdin for EOF.
+# Braces make bash parse the whole script before running it.
 REMOTE_SCRIPT = r"""{
 set -m  # job control: the job gets its own process group, so one kill reaches all of it
-mark() { printf '\036{mark} %s\n' "$*" >&2; }
+mark() { (printf '\036{mark} %s\n' "$*" >&2) 8>&- 9>&-; }
 {deny_check}
 if is_denied; then mark denied; exit 10; fi
+id={stage_id}; need_git={need_git}; root="$HOME/.cache/heavy/work"
+case "$id" in ''|*[!0-9a-f]*) mark prep-failed; exit 255 ;; esac
+for p in "$HOME/.cache" "$HOME/.cache/heavy" "$root" "$root/$id" "$root/$id/tree" \
+         "$root/$id/lock" ${need_git:+"$root/$id/git"}; do
+  [ -L "$p" ] && { echo "heavy: refusing symlink in staging path: $p" >&2; mark prep-failed; exit 255; }
+done
+mkdir -p -- "$root/$id/tree" || { mark prep-failed; exit 255; }
+if [ -n "$need_git" ]; then mkdir -p -- "$root/$id/git" || { mark prep-failed; exit 255; }; fi
+real_home=$(cd -P -- "$HOME" && pwd -P) || { mark prep-failed; exit 255; }
+real_root=$(cd -P -- "$root" && pwd -P) || { mark prep-failed; exit 255; }
+[ "$real_root" = "$real_home/.cache/heavy/work" ] || {
+  echo "heavy: staging root $real_root is outside $real_home/.cache/heavy/work" >&2
+  mark prep-failed; exit 255
+}
+for sub in tree ${need_git:+git}; do
+  real_sub=$(cd -P -- "$root/$id/$sub" && pwd -P) || { mark prep-failed; exit 255; }
+  case "$real_sub" in "$real_root"/*) ;; *)
+    echo "heavy: staging path $real_sub is outside $real_root" >&2
+    mark prep-failed; exit 255 ;;
+  esac
+done
+# Hold the per-staging-dir lock on the peer from before rsync until .heavy-cleanup ends.
+exec 8>"$root/$id/lock" || { mark lock-failed "$root/$id/lock"; exit 255; }
+while ! flock -n 8; do
+  read -r -t 0.5 _
+  [ $? -lt 128 ] && exit 143
+done
+mark ready
+read -r go || exit 143
+[ "$go" = go ] || exit 143
 stop() {
   stopped=1
   if [ -n "${pid:-}" ]; then
     kill -TERM -- "-$pid" 2>/dev/null
     # KILLs a leader that ignores TERM: the wait loop below can't end while it lives.
-    (sleep {grace}; kill -KILL -- "-$pid" 2>/dev/null) 9>&- >/dev/null 2>&1 &
+    (sleep {grace}; kill -KILL -- "-$pid" 2>/dev/null) 8>&- 9>&- >/dev/null 2>&1 &
     timer=$!
   fi
 }
 trap stop TERM INT HUP
-(cat >/dev/null; kill -TERM $$) >/dev/null 2>&1 &
+(cat >/dev/null; kill -TERM $$) 8>&- >/dev/null 2>&1 &
 watcher=$!
 fail() { mark "$@"; kill -- "-$watcher" 2>/dev/null; exit 255; }
 tree_path="$HOME"/{stage_tree}
@@ -137,16 +144,21 @@ lock_dir={lock_dir}; lock_dir=${lock_dir:-/tmp/heavy-$(id -u)}
 mkdir -m 700 -p -- "$lock_dir" || fail lock-failed "$lock_dir"
 while [ -z "${stopped:-}" ]; do
   for slot in $(seq 1 "$slots"); do
-    # fd 9 holds the slot. Jobs get 9>&- so a daemon they start can't inherit it.
+    # fd 9 holds the slot. Jobs get 8>&- 9>&- so daemons can't inherit either lock.
     exec 9>"$lock_dir/slot-$slot.lock" || fail lock-failed "$lock_dir/slot-$slot.lock"
     flock -n 9 && break 2
   done
   exec 9>&-
   sleep 1
 done
-if [ -n "${stopped:-}" ]; then rc=143; else
+if [ -n "${stopped:-}" ]; then rc=143
+elif is_denied; then
+  mark denied
+  kill -- "-$watcher" 2>/dev/null
+  exit 10
+else
   mark slot "$slot/$slots"
-  (cd "$HOME"/{stage_cwd} && exec bash -c -- {command}) 9>&- </dev/null &
+  (cd "$HOME"/{stage_cwd} && exec bash -c -- {command}) 8>&- 9>&- </dev/null &
   pid=$!
   [ -n "${stopped:-}" ] && stop  # a stop that came between the check and the start
   while :; do
@@ -160,7 +172,7 @@ if [ -n "${stopped:-}" ]; then rc=143; else
   [ -n "${timer:-}" ] && kill -- "-$timer" 2>/dev/null
   mark job-done
   if [ -f "$tree_path/.heavy-cleanup" ]; then
-    (cd "$tree_path" && bash .heavy-cleanup) 9>&- </dev/null || mark cleanup-failed $?
+    (cd "$tree_path" && bash .heavy-cleanup) 8>&- 9>&- </dev/null || mark cleanup-failed $?
   fi
 fi
 kill -- "-$watcher" 2>/dev/null
@@ -339,101 +351,114 @@ def run_remote(command, root, outs, peer, target, ssh_args):
             return FAILED
         rel_gitdir = os.path.relpath(gitdir, common)
         stage_gitdir = stage_git if rel_gitdir == "." else f"{stage_git}/{rel_gitdir}"
-    try:
-        _, tree_fd = acquire_any([os.path.join(LOCK_DIR, f"tree-{sid}.lock")])
-    except OSError as err:
-        say(f"can't open worktree lock in {LOCK_DIR}: {err}")
-        return FAILED
-    if tree_fd is None:
-        return 128 + stop_signal
+    script = render(REMOTE_SCRIPT, {
+        "mark": MARK[1:-1].decode(), "deny_check": DENY_CHECK,
+        "stage_id": shlex.quote(sid), "need_git": "1" if mirror else "''",
+        "grace": str(GRACE), "grace_tenths": str(GRACE * 10),
+        "lock_dir": shlex.quote(os.environ.get("HEAVY_LOCK_DIR", "")),
+        "stage_cwd": shlex.quote(stage_cwd), "stage_tree": shlex.quote(stage_tree),
+        "stage_gitdir": shlex.quote(stage_gitdir), "command": shlex.quote(command),
+    })
     rsh = shlex.join(ssh_args)
+    # Own session keeps Ctrl-C or group kill (agent-wait) off ssh: heavy closes stdin and still hears exit.
+    ssh = subprocess.Popen([*ssh_args, target, "bash", "-l", "-s"],
+                           stdin=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
     try:
-        queued = time.monotonic() - started
-        sync_started = time.monotonic()
-        prep = render(PREPARE_SCRIPT, {"stage_id": shlex.quote(sid), "need_git": "1" if mirror else "''"})
-        if (rc := subprocess.run([*ssh_args, target, "bash", "-s"], input=prep.encode()).returncode):
-            return failed(f"preparing staging dir on {peer} failed (ssh exited {rc})")
-        if mirror:
-            if (rc := subprocess.call(["rsync", "-a", "-s", "-e", rsh, "--delete", f"{mirror}/", f"{target}:{stage_git}/"])):
-                return failed(f"mirroring {mirror} failed (rsync {rc})")
-            if stop_signal is not None:
-                return 128 + stop_signal
-        ignore = os.path.join(root, ".heavyignore")
-        rc = subprocess.call(["rsync", "-a", "-s", "-e", rsh, "--delete",
-                              *([f"--exclude-from={ignore}"] if os.path.isfile(ignore) else []),
-                              f"{root}/", f"{target}:{stage_tree}/"])
-        if rc:
-            return failed(f"copying {root} failed (rsync {rc})")
-        if stop_signal is not None:
-            return 128 + stop_signal
-        sync_time = time.monotonic() - sync_started
-        script = render(REMOTE_SCRIPT, {
-            "mark": MARK[1:-1].decode(), "deny_check": DENY_CHECK,
-            "grace": str(GRACE), "grace_tenths": str(GRACE * 10),
-            "lock_dir": shlex.quote(os.environ.get("HEAVY_LOCK_DIR", "")),
-            "stage_cwd": shlex.quote(stage_cwd), "stage_tree": shlex.quote(stage_tree),
-            "stage_gitdir": shlex.quote(stage_gitdir), "command": shlex.quote(command),
-        })
-        job_started = time.monotonic()
-        # Own session keeps Ctrl-C or group kill (agent-wait) off ssh: heavy closes stdin and still hears exit.
-        ssh = subprocess.Popen([*ssh_args, target, "bash", "-l", "-s"],
-                               stdin=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-        try:
-            ssh.stdin.write(script.encode())
-            ssh.stdin.flush()
-        except (BrokenPipeError, ValueError):
-            pass
-        events = {}
-        pump = threading.Thread(target=pump_stderr, args=(ssh.stderr, events, job_started, peer), daemon=True)
-        pump.start()
-        threading.Thread(target=stop_remote, args=(ssh,), daemon=True).start()
+        ssh.stdin.write(script.encode())
+        ssh.stdin.flush()
+    except (BrokenPipeError, ValueError):
+        pass
+    events, ready, go_at = {}, threading.Event(), [started]
+    pump = threading.Thread(target=pump_stderr, args=(ssh.stderr, events, ready, go_at, peer), daemon=True)
+    pump.start()
+    threading.Thread(target=stop_remote, args=(ssh,), daemon=True).start()
+    ready.wait()
+    if "ready" not in events:
         ssh.wait()
         pump.join()
         if "denied" in events:
             return DENIED
         if "lock-failed" in events:
-            say(f"can't open slot lock on {peer}: {events['lock-failed'][0]}")
+            say(f"can't open lock on {peer}: {events['lock-failed'][0]}")
             return FAILED
-        slot_at = events.get("slot", (None, job_started))[1]
-        done_at = events.get("job-done", (None, time.monotonic()))[1]
-        copy_started = time.monotonic()
-        for out in outs if "exit" in events else []:  # a lost connection has nothing to copy from
-            copy_back(out, stage_tree, real_root, peer, target, rsh)
-        copy_time = time.monotonic() - copy_started
-        if "exit" not in events:
-            say(f"lost the job on {peer} (ssh exited {ssh.returncode})")
-            return 128 + stop_signal if stop_signal is not None else FAILED
-        rc = 128 + stop_signal if stop_signal is not None else int(events["exit"][0])
-        say(f"done on {peer}: queue {queued + slot_at - job_started:.1f}s, sync {sync_time:.1f}s, "
-            f"job {done_at - slot_at:.1f}s, copy-back {copy_time:.1f}s, "
-            f"total {time.monotonic() - started:.1f}s, exit {rc}")
-        return rc
-    finally:
-        os.close(tree_fd)
+        return failed(f"preparing staging dir on {peer} failed (ssh exited {ssh.returncode})")
+    queued = events["ready"][1] - started
+    sync_started = time.monotonic()
+    sync_err = None
+    if mirror and (rc := subprocess.call(["rsync", "-a", "-s", "-e", rsh, "--delete", f"{mirror}/", f"{target}:{stage_git}/"])):
+        sync_err = f"mirroring {mirror} failed (rsync {rc})"
+    if not sync_err and stop_signal is None:
+        ignore = os.path.join(root, ".heavyignore")
+        rc = subprocess.call(["rsync", "-a", "-s", "-e", rsh, "--delete",
+                              *([f"--exclude-from={ignore}"] if os.path.isfile(ignore) else []),
+                              f"{root}/", f"{target}:{stage_tree}/"])
+        if rc:
+            sync_err = f"copying {root} failed (rsync {rc})"
+    if sync_err or stop_signal is not None:
+        try:
+            ssh.stdin.close()
+        except OSError:
+            pass
+        ssh.wait()
+        pump.join()
+        return failed(sync_err) if sync_err else 128 + stop_signal
+    sync_time = time.monotonic() - sync_started
+    go_at[0] = time.monotonic()
+    try:
+        ssh.stdin.write(b"go\n")
+        ssh.stdin.flush()
+    except (BrokenPipeError, ValueError):
+        pass
+    ssh.wait()
+    pump.join()
+    if "denied" in events:
+        return DENIED
+    if "lock-failed" in events:
+        say(f"can't open slot lock on {peer}: {events['lock-failed'][0]}")
+        return FAILED
+    slot_at = events.get("slot", (None, go_at[0]))[1]
+    done_at = events.get("job-done", (None, time.monotonic()))[1]
+    copy_started = time.monotonic()
+    for out in outs if "exit" in events else []:  # a lost connection has nothing to copy from
+        copy_back(out, stage_tree, real_root, peer, target, rsh)
+    copy_time = time.monotonic() - copy_started
+    if "exit" not in events:
+        say(f"lost the job on {peer} (ssh exited {ssh.returncode})")
+        return 128 + stop_signal if stop_signal is not None else FAILED
+    rc = 128 + stop_signal if stop_signal is not None else int(events["exit"][0])
+    say(f"done on {peer}: queue {queued + slot_at - go_at[0]:.1f}s, sync {sync_time:.1f}s, "
+        f"job {done_at - slot_at:.1f}s, copy-back {copy_time:.1f}s, "
+        f"total {time.monotonic() - started:.1f}s, exit {rc}")
+    return rc
 
 
-def pump_stderr(stream, events, job_started, peer):
+def pump_stderr(stream, events, ready, go_at, peer):
     """Pass remote stderr through, minus protocol lines, which go to events."""
     fd, buf = stream.fileno(), b""
-    while chunk := os.read(fd, 65536):
-        buf += chunk
-        *lines, buf = buf.split(b"\n")
-        for line in lines:
-            text, mark, proto = line.partition(MARK)
-            if text or not mark:
-                sys.stderr.buffer.write(text + b"\n")
-            if mark:
-                name, _, val = proto.decode(errors="replace").partition(" ")
-                events[name] = (val, time.monotonic())
-                if name == "slot":
-                    say(f"running on {peer}, slot {val}, after {time.monotonic() - job_started:.1f}s waiting for it")
-                elif name == "cleanup-failed":
-                    say(f".heavy-cleanup on {peer} exited {val}")
-        held = buf.find(MARK[:1])
-        sys.stderr.buffer.write(buf if held < 0 else buf[:held])
-        buf = b"" if held < 0 else buf[held:]
-        sys.stderr.buffer.flush()
-    sys.stderr.buffer.write(buf)
+    try:
+        while chunk := os.read(fd, 65536):
+            buf += chunk
+            *lines, buf = buf.split(b"\n")
+            for line in lines:
+                text, mark, proto = line.partition(MARK)
+                if text or not mark:
+                    sys.stderr.buffer.write(text + b"\n")
+                if mark:
+                    name, _, val = proto.decode(errors="replace").partition(" ")
+                    events[name] = (val, time.monotonic())
+                    if name == "ready":
+                        ready.set()
+                    elif name == "slot":
+                        say(f"running on {peer}, slot {val}, after {time.monotonic() - go_at[0]:.1f}s waiting for it")
+                    elif name == "cleanup-failed":
+                        say(f".heavy-cleanup on {peer} exited {val}")
+            held = buf.find(MARK[:1])
+            sys.stderr.buffer.write(buf if held < 0 else buf[:held])
+            buf = b"" if held < 0 else buf[held:]
+            sys.stderr.buffer.flush()
+        sys.stderr.buffer.write(buf)
+    finally:
+        ready.set()
 
 
 def stop_remote(ssh):

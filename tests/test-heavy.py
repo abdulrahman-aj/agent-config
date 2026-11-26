@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Behavior tests for home/.local/bin/heavy: real processes and exit codes."""
 
+import fcntl
 import hashlib
 import json
 import os
@@ -337,6 +338,60 @@ class HeavyTest(unittest.TestCase):
         self.assertEqual(self.run_heavy("touch ran", remote=True), FAILED)
         self.assertTrue(os.path.exists(os.path.join(outside, "precious")))
         self.assertFalse(os.path.exists(os.path.join(outside, "ran")))
+
+    def test_queued_job_skips_peer_if_deny_turns_on_while_waiting_for_slot(self):
+        peer1, peer2 = self.make_peer("peer-1"), self.make_peer("peer-2")
+        self.set_peers(("peer-1", True, "linux"), ("peer-2", True, "linux"))
+        wt = os.path.join(self.home, "queued-wt")
+        self.git("worktree", "add", "-q", wt)
+        rlocks = os.path.join(self.tmp.name, "queued-rlocks")
+        os.makedirs(rlocks)
+        held = []
+        for n in range(1, SLOTS + 1):
+            f = open(os.path.join(rlocks, f"slot-{n}.lock"), "w")
+            fcntl.flock(f, fcntl.LOCK_EX)
+            held.append(f)
+        try:
+            proc = self.start("touch ran-queued", remote=True, cwd=wt, HEAVY_LOCK_DIR=rlocks)
+            # Rewritten .git proves the job passed the pre-slot deny check and reached the slot wait.
+            git_file = os.path.join(stage_dir(peer1, wt), "tree", ".git")
+            deadline = time.monotonic() + 20
+            while True:
+                if os.path.exists(git_file):
+                    with open(git_file) as f:
+                        if ".cache/heavy/work/" in f.read():
+                            break
+                self.assertLess(time.monotonic(), deadline, "queued job never reached slot wait")
+                time.sleep(0.05)
+            self.write(".config/environment.d/60-agent-heavy-jobs.conf", "AGENT_HEAVY_JOBS=deny\n", root=peer1)
+        finally:
+            for f in held:
+                f.close()
+        self.assertEqual(proc.wait(timeout=30), 0)
+        self.assertFalse(os.path.exists(os.path.join(stage_dir(peer1, wt), "tree", "ran-queued")))
+        self.assertTrue(os.path.exists(os.path.join(stage_dir(peer2, wt), "tree", "ran-queued")))
+
+    def test_retry_waits_for_remote_cleanup_after_client_kill(self):
+        proof = os.path.join(self.tmp.name, "cleanup-saw-marker")
+        release = os.path.join(self.tmp.name, "release-cleanup")
+        self.write("marker", "keep\n")
+        self.write(".heavy-cleanup", f"touch cleanup-started\nwhile [ ! -e {release} ]; do sleep 0.05; done\n"
+                                     f"test -e marker && touch {proof}\n")
+        first = self.start("sleep 300 & echo $! > started; wait", remote=True)
+        self.wait_for(os.path.join(self.remote_tree, "started"))
+        first.kill()
+        first.wait(timeout=10)
+        self.wait_for(os.path.join(self.remote_tree, "cleanup-started"))
+        os.remove(os.path.join(self.repo, "marker"))
+        retry = self.start("touch retry-ran", remote=True)
+        time.sleep(1.0)
+        self.assertTrue(os.path.exists(os.path.join(self.remote_tree, "marker")))
+        self.assertFalse(os.path.exists(os.path.join(self.remote_tree, "retry-ran")))
+        open(release, "w").close()
+        self.assertEqual(retry.wait(timeout=30), 0)
+        self.assertTrue(os.path.exists(proof))
+        self.assertTrue(os.path.exists(os.path.join(self.remote_tree, "retry-ran")))
+        self.assertFalse(os.path.exists(os.path.join(self.remote_tree, "marker")))
 
 
 if __name__ == "__main__":
