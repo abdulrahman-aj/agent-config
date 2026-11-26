@@ -1,26 +1,73 @@
-// A modern technical book on a 178 x 235 mm trade page: serif body (Source Serif 4), sans
-// structure (Source Sans 3), mono code (JetBrains Mono). build.py copies this file next to
-// the book's book.typ on every build; edit it here, not the copy.
+// A modern technical book on a 160 x 212 mm screen-first page: serif body (Source Serif 4),
+// sans structure (Source Sans 3), mono code (JetBrains Mono). build.py copies this file next
+// to the book's book.typ on every build; edit it here, not the copy.
 //
 // Interface (everything else in this file is styling and may change):
-//   #show: book.with(title:, subtitle:, reader:, snapshot:)   title page and contents
-//   #part(title)[body]                                          part opener on its own page
-//   #group(title)                                               a label in the contents only
-//   #chapter(title, numbered: true, label: none)[body]           opener on a new page
+//   #show: book.with(title:, subtitle:, reader:, snapshot:)     title page, brief and full contents
+//   #part(title)[body]                                          part opener with its chapter list
+//   #group(title)                                               a label in the full contents only
+//   #chapter(title, numbered: true, label: none,                opener on a new page; tag (e.g. "R1")
+//     tag: none, tag-label: "Review")[body]                     replaces the number on an unnumbered
+//                                                               chapter and breaks before Answers
+//   @ch-topic, @sec-topic                                       reordering-safe chapter ("chapter N")
+//                                                               or section ("“Title” (p. N)") link
+//   #chapter-number(<ch-topic>)                                 linked chapter number alone
 //   #takeaways[- list]                                          "After this chapter you can"
 //   #exercise(title, where: "Laptop", disposable: false)[body]  read + try
-//   #case(title, meta: none)[story][ask][verdict]              a real case the reader judges
+//   #case(title, meta: none)[story][ask][verdict]               a real case the reader judges
 //   #question[prompt][answer]                                   answer goes to the chapter end
-//                                                               (numbered chapters only)
+//                                                               (numbered or tagged chapters)
 //   #aside[body]                                                a side note
+//   #crux[question]                                             optional decision question; use
+//                                                               sparingly, only for the points a
+//                                                               chapter turns on, never as a labelled
+//                                                               opener in every section
 //   #diagram(path, caption)                                     an SVG figure
-//   #glossary(([term], [definition], <heading-label>), ...)      link to a section or chapter
+//   #web("https://…", ...)                                      web addresses as one mono footnote
+//   #glossary(([term], [definition], <heading-label>), ...)     link to a section or chapter
 //   ```terminal  lines: "$ cmd" (command), ">> out" (highlighted output), else output
 //   ```lang      ordinary code; long blocks split with three lines kept on each side
+
+// Heading levels: parts are 1, chapters 2 and sections 3, so PDF bookmarks nest
+// part > chapter > section. Inside a chapter `==` is a section: the chapter sets a
+// heading offset, so chapter files never spell out these numbers.
+#let chapter-level = 2
+#let section-level = 3
+
+// Parts are unnumbered and never step the heading counter, so its value at a chapter is
+// (0, n) and the chapter count runs on across parts.
+#let chapter-of(nums) = nums.at(chapter-level - 1, default: 0)
+#let chapter-numbering(..nums) = str(chapter-of(nums.pos()))
+
+// An unnumbered chapter may carry a tag, such as "R1" for a part's review, that stands
+// where a number would: on the opener, in the contents, in the running head and in front
+// of its question numbers. It doesn't step the heading counter.
+#let chapter-tag = state("chapter-tag", none)
+#let chapter-tag-label = state("chapter-tag-label", "Review")
+
+// What goes where a chapter's number goes: its number, its tag, or none.
+#let chapter-mark(h) = if h.numbering != none {
+  str(chapter-of(counter(heading).at(h.location())))
+} else { chapter-tag.at(h.location()) }
 
 #let serif = "Source Serif 4"
 #let sans = "Source Sans 3"
 #let mono = "JetBrains Mono"
+
+// A web address goes in a footnote, so the sentence names the resource and a reader of a
+// printed copy finds the address at the page foot. Mono and unhyphenated, because a hyphen
+// the typesetter adds is a typo once typed back in. Only the default https:// scheme is
+// omitted; host and path stay intact, and each slash is also a break point.
+// Several addresses stack under the first, so each starts at the same column.
+#let web(..urls) = {
+  let items = urls.pos().map(u => {
+    let shown = u.trim("https://", at: start, repeat: false)
+    link(u, text(font: mono, size: 7.6pt, hyphenate: false, shown.replace("/", "/\u{200B}")))
+  })
+  footnote(if items.len() == 1 { items.first() } else {
+    box(baseline: 100% - 0.62em, stack(spacing: 0.55em, ..items))
+  })
+}
 
 #let ink = rgb("#18212b")
 #let soft = rgb("#586474")
@@ -74,6 +121,27 @@
 
 #let page-ref(lbl) = context folio-of(lbl)
 
+// A row of the brief contents and of a part opener's chapter list. Every title starts on
+// one line; the part label or chapter number hangs in the column to its left. A part row
+// shows no page: its opener is always the page before its first chapter.
+#let toc-row(mark, title, pg, above: 0.55 * unit) = block(above: above, below: 0.55 * unit,
+  grid(columns: (15mm, 1fr, auto), column-gutter: (0pt, 6pt),
+    align: (right + bottom, left + bottom, right + bottom),
+    box(inset: (right: 4mm), mark),
+    par(justify: false, text(font: sans, size: 9.8pt, fill: ink, {
+      title
+      if pg != none {
+        box(width: 1fr, inset: (x: 4pt), repeat(gap: 3pt, text(fill: faint, size: 7pt, ".")))
+      }
+    })),
+    text(font: sans, size: 9.8pt, fill: soft, pg)))
+
+#let chapter-row(h) = {
+  link(h.location(), toc-row(text(font: sans, size: 9.8pt, weight: 600, fill: blue,
+    chapter-mark(h)),
+    h.body, folio-at(h.location())))
+}
+
 // ---------------------------------------------------------------- page furniture
 
 // Pages without a running head: chapter openers, and the title and contents pages.
@@ -83,21 +151,19 @@
 #let running-head = context {
   let p = here().page()
   if is-opener(p) or is-quiet(p) { return }
-  let chapters = query(heading.where(level: 1)).filter(h => h.location().page() <= p
-    and h.supplement != [Part] and h.supplement != [Group])
+  let chapters = query(heading.where(level: chapter-level)).filter(h =>
+    h.location().page() <= p and h.supplement != [Group])
   if chapters.len() == 0 { return }
   let chapter = chapters.last()
   set text(font: sans, size: 7.8pt, fill: soft)
   let number = text(weight: 700, fill: ink, folio-at(here()))
   if calc.even(p) {
-    let label = if chapter.numbering != none {
-      text(weight: 700, fill: blue, numbering(chapter.numbering, ..counter(heading).at(chapter.location())))
-      h(0.6em)
-    }
+    let mark = chapter-mark(chapter)
+    let label = if mark != none { text(weight: 700, fill: blue, mark) + h(0.6em) }
     number + h(1.4em) + label + chapter.body
   } else {
     let start = chapter.location().page()
-    let sections = query(heading.where(level: 2)).filter(h => {
+    let sections = query(heading.where(level: section-level)).filter(h => {
       let q = h.location().page()
       q >= start and q <= p
     })
@@ -220,37 +286,55 @@
     numbering: n => text(font: sans, weight: 600, fill: blue, str(n) + "."))
   set block(spacing: block-gap)
 
+  // Chapter references (`@ch-x`) render as "chapter N"; unnumbered chapters and sections
+  // (`@sec-x`) render as their title and page, so links survive reordering.
+  show ref: it => {
+    let el = it.element
+    if el != none and el.func() == heading and el.supplement != [Group] and el.level == chapter-level and el.numbering != none and it.supplement == auto {
+      link(el.location(), [chapter~#chapter-of(counter(heading).at(el.location()))])
+    } else if el != none and el.func() == heading and el.supplement != [Group] and (el.level > chapter-level or el.numbering == none) and it.supplement == auto {
+      link(el.location(), [“#el.body” (p.~#folio-at(el.location()))])
+    } else {
+      it
+    }
+  }
+
   show raw.where(block: true): it => code-block(
     if it.lang == "terminal" { terminal-rows(it.text) } else { it.lines.map(l => (l.body, false, leading-spaces(l.text))) })
 
   show heading: set text(font: sans, fill: ink, hyphenate: false)
   show heading: set par(justify: false)
-  show heading.where(level: 2): it => block(above: if it.supplement == [Case] { 0.6 * unit } else { 3.4 * unit },
+  show heading.where(level: section-level): it => block(above: if it.supplement == [Case] { 0.6 * unit } else { 3.4 * unit },
     below: 1.3 * unit, sticky: true,
     text(size: 12.5pt, weight: if it.supplement == [Case] { 700 } else { 600 }, it.body))
-  show heading.where(level: 1): it => if it.supplement == [Group] { none } else if it.supplement == [Part] {
-    block(width: 100%, above: 0pt, below: 6 * unit, {
-      v(48mm)
-      block(below: 12pt, caps([Part #context counter("part").display()], size: 9pt))
-      block(above: 0pt, below: 0pt, par(leading: 0.3em,
-        text(size: 30pt, weight: 600, tracking: -0.015em, fill: blue, it.body)))
-      v(14pt)
-      line(length: 30mm, stroke: 2pt + blue)
-    })
-  } else { block(width: 100%, above: 0pt, below: 4 * unit, {
-    v(22mm)
-    if it.numbering != none {
-      block(below: 10pt, caps([Chapter], size: 8pt))
-      block(below: 14pt, text(font: sans, size: 60pt, weight: 300, fill: blue,
-        top-edge: "cap-height", bottom-edge: "baseline", counter(heading).display(it.numbering)))
-    } else {
-      v(26pt)
-    }
+  show heading.where(level: 1): it => block(width: 100%, above: 0pt, below: 6 * unit, {
+    v(48mm)
+    block(below: 12pt, caps([Part #context counter("part").display()], size: 9pt))
     block(above: 0pt, below: 0pt, par(leading: 0.3em,
-      text(size: 23pt, weight: 600, tracking: -0.01em, it.body)))
-    v(12pt)
-    line(length: 100%, stroke: 1pt + ink)
-  }) }
+      text(size: 30pt, weight: 600, tracking: -0.015em, fill: blue, it.body)))
+    v(14pt)
+    line(length: 30mm, stroke: 2pt + blue)
+  })
+  show heading.where(level: chapter-level): it => if it.supplement == [Group] { none } else {
+    block(width: 100%, above: 0pt, below: 4 * unit, {
+      v(22mm)
+      context {
+        let mark = chapter-mark(it)
+        if mark != none {
+          let kicker = if it.numbering != none [Chapter] else { chapter-tag-label.at(it.location()) }
+          if kicker != none { block(below: 10pt, caps(kicker, size: 8pt)) }
+          block(below: 14pt, text(font: sans, size: 60pt, weight: 300, fill: blue,
+            top-edge: "cap-height", bottom-edge: "baseline", mark))
+        } else {
+          v(26pt)
+        }
+      }
+      block(above: 0pt, below: 0pt, par(leading: 0.3em,
+        text(size: 23pt, weight: 600, tracking: -0.01em, it.body)))
+      v(12pt)
+      line(length: 100%, stroke: 1pt + ink)
+    })
+  }
 
   // Tables: rules instead of a grid, no hyphenation in cells. Tables of five rows or fewer
   // stay whole; longer ones may break between rows, never inside one, so they should mark
@@ -273,24 +357,24 @@
     align(left, text(font: sans, size: 8.4pt, fill: soft, it.body)))
   set figure(gap: 7pt)
 
-  // Contents: chapters with their number, sections indented with dot leaders, cases marked.
+  // Contents: chapters with their number or tag, sections indented with dot leaders, cases marked.
   show outline.entry: it => {
     let entry = it.element
     let pg = folio-at(entry.location())
     if entry.supplement == [Part] {
       let n = counter("part").at(entry.location()).first()
       block(above: 3.2 * unit, below: 0.6 * unit, sticky: true, link(entry.location(),
-        grid(columns: (1fr, auto), column-gutter: 6pt,
-          text(font: sans, size: 11.5pt, weight: 700, fill: blue, [Part #n#h(0.6em)#entry.body]),
-          text(font: sans, size: 10.5pt, weight: 600, pg))))
+        block(width: 100%, inset: (bottom: 4pt), stroke: (bottom: 0.6pt + blue),
+          grid(columns: (1fr, auto), column-gutter: 6pt,
+            text(font: sans, size: 11.5pt, weight: 700, fill: blue, [Part #n#h(0.6em)#entry.body]),
+            text(font: sans, size: 10.5pt, weight: 600, pg)))))
     } else if entry.supplement == [Group] {
       block(above: 2.2 * unit, below: 0pt, sticky: true,
         grid(columns: (9mm, 1fr), [], caps(entry.body, size: 7.4pt)))
-    } else if entry.level == 1 {
-      let num = if entry.numbering != none { counter(heading).at(entry.location()).first() }
+    } else if entry.level == chapter-level {
       block(above: 1.9 * unit, below: 0.9 * unit, sticky: true, link(entry.location(),
         grid(columns: (9mm, 1fr, auto), column-gutter: (0pt, 6pt),
-          text(font: sans, size: 10.5pt, weight: 700, fill: blue, if num != none { str(num) }),
+          text(font: sans, size: 10.5pt, weight: 700, fill: blue, chapter-mark(entry)),
           text(font: sans, size: 10.5pt, weight: 600, entry.body),
           text(font: sans, size: 10.5pt, weight: 600, pg))))
     } else {
@@ -334,12 +418,30 @@
       text(font: sans, size: 8.2pt, fill: soft, snapshot)))
   }
 
-  // Contents, on the next page. No right-hand openers: the books are read on screen,
-  // where the blank pages they force are just gaps.
+  // Brief contents, then the full contents. No right-hand openers: the books are read on
+  // screen, where the blank pages they force are just gaps.
   pagebreak()
   [#metadata(none) <quiet>]
-  heading(level: 1, numbering: none, outlined: false, bookmarked: true)[Contents]
-  outline(title: none, target: heading.where(level: 1).or(heading.where(level: 2)), depth: 2)
+  heading(level: chapter-level, numbering: none, outlined: false, bookmarked: true)[Brief contents]
+  {
+    // The book's shape at a glance: parts and chapters, no sections or groups.
+    show outline.entry: it => {
+      let entry = it.element
+      if entry.supplement == [Part] {
+        let n = counter("part").at(entry.location()).first()
+        link(entry.location(), toc-row(above: 2.6 * unit,
+          caps([Part #n], size: 7.4pt, weight: 700, fill: blue),
+          text(weight: 600, entry.body), none))
+      } else if entry.supplement == [Group] {
+        none
+      } else { chapter-row(entry) }
+    }
+    outline(title: none, depth: chapter-level, target: heading)
+  }
+  pagebreak()
+  [#metadata(none) <quiet>]
+  heading(level: chapter-level, numbering: none, outlined: false, bookmarked: true)[Contents]
+  outline(title: none, depth: section-level, target: heading)
 
   body
 }
@@ -347,23 +449,41 @@
 // ---------------------------------------------------------------- parts
 
 // A part opens on its own quiet page: "Part N", its title, then an optional body such as
-// a sentence on what the part holds. It is a level-1 heading with the supplement [Part],
-// so it reaches the contents and the PDF bookmarks, while the running head and chapter
-// numbering skip it. A group labels a run of chapters in the contents and prints nothing;
-// put it just before the group's first chapter.
+// a sentence on what the part holds, with its chapters listed at the foot. It is a level-1
+// heading with the supplement [Part], so it nests chapters beneath it in PDF bookmarks
+// while the running head and chapter numbering skip it.
 #let part(title, body) = {
   pagebreak(weak: true)
   counter("part").step()
   [#metadata(none) <quiet>]
   context [#metadata((page: here().page())) <part-open>]
   heading(level: 1, numbering: none, supplement: [Part], title)
-  set text(size: 10.5pt, hyphenate: false)
-  set par(justify: false)
-  block(width: 85%, body)
+  // A standfirst in the opener's sans, like the title page's subtitle: set as body text it
+  // read as a stray paragraph under the display title.
+  block(width: 78%, {
+    set text(font: sans, size: 13pt, fill: soft, hyphenate: false)
+    set par(justify: false, leading: 0.55em)
+    body
+  })
+  // The part's chapters at the foot of the opener, for a reader who lands here from a
+  // bookmark or a link.
+  v(1fr)
+  context {
+    let next-part = query(heading.where(level: 1).after(here()))
+    let end = if next-part.len() > 0 { next-part.first().location().page() } else { none }
+    let chapters = query(heading.where(level: chapter-level).after(here()))
+      .filter(h => h.supplement != [Group] and (end == none or h.location().page() < end))
+    if chapters.len() > 0 {
+      line(length: 100%, stroke: 0.5pt + rule)
+      for h in chapters { chapter-row(h) }
+    }
+  }
 }
 
-#let group(title) = heading(level: 1, numbering: none, supplement: [Group], bookmarked: false,
-  title)
+// A group labels a run of chapters in the full contents and prints nothing; put it just
+// before the group's first chapter.
+#let group(title) = heading(level: chapter-level, numbering: none, supplement: [Group],
+  bookmarked: false, title)
 
 // ---------------------------------------------------------------- chapters
 
@@ -375,22 +495,29 @@
 #let chapter-index = counter("chapter-index")
 #let fit-level = state("fit-level", 0)
 
+#let chapter-number(target) = ref(target, supplement: none)
+
 #let answers = state("answers", ())
 #let question-count = counter("question")
 
-#let chapter(title, numbered: true, label: none, body) = {
+#let chapter(title, numbered: true, label: none, tag: none, tag-label: "Review", body) = {
+  assert(tag == none or not numbered, message: "a tag replaces the number: use numbered: false")
   pagebreak(weak: true)
+  chapter-tag.update(tag)
+  chapter-tag-label.update(tag-label)
   chapter-index.step()
   question-count.update(0)
   answers.update(())
   // The first numbered chapter starts the arabic page numbers at 1.
-  context if numbered and counter(heading).get().first() == 0 { counter(page).update(1) }
+  context if numbered and chapter-of(counter(heading).get()) == 0 { counter(page).update(1) }
   // No page in the value: every folio and running head queries this marker, so a value that
   // moves with the layout costs a pass each time and can keep the book from converging.
   [#metadata((numbered: numbered)) <chapter-open>]
-  let h = heading(level: 1, numbering: if numbered { "1" } else { none }, title)
+  let h = heading(level: chapter-level, numbering: if numbered { chapter-numbering } else { none },
+    title)
   if label != none [#h#label] else { h }
 
+  set heading(offset: chapter-level - 1)
   context {
     let idx = chapter-index.get().first()
     let level = fit-levels.at(str(idx), default: 0)
@@ -404,8 +531,14 @@
     context {
       let items = answers.get()
       if items.len() > 0 {
+        // A tagged chapter (such as a review) is often short, so its answer would land
+        // under its question; a new page keeps the reader from seeing it early.
+        if tag != none {
+          context [#metadata((page: here().page())) <answers-break>]
+          pagebreak(weak: true)
+        }
         block(above: 6 * unit, below: 0pt, sticky: true, line(length: 100%, stroke: 1.4pt + ink))
-        heading(level: 2, outlined: false, bookmarked: true)[Answers]
+        heading(level: section-level, outlined: false, bookmarked: true)[Answers]
         for a in items {
           block(above: 2.2 * unit, below: 0pt, {
             // Locate the answer by its label: here() would resolve to the enclosing
@@ -434,7 +567,8 @@
     context {
       let pos = here().position()
       let fill = (pos.y - margins.top) / (page-height - margins.top - margins.bottom)
-      let opener = query(heading.where(level: 1).before(here())).last().location().page()
+      let opener = query(heading.where(level: chapter-level).before(here()))
+        .filter(h => h.supplement != [Group]).last().location().page()
       [#metadata((chapter: idx, page: pos.page, opener: opener, fill: fill)) <fit>]
     }
   }
@@ -480,17 +614,31 @@
     body
   })
 
+// The question a section builds its answer to, set before the material so the reader reads
+// for the answer. Use sparingly, only for the points a chapter turns on, never as a
+// labelled opener in every section. Unbreakable and sticky, so it never strands at a foot.
+#let crux(body) = block(width: 100%, above: 2.2 * unit, below: 2.2 * unit, breakable: false,
+  sticky: true, inset: (x: 10pt, y: 8pt), stroke: (top: 0.8pt + ink, bottom: 0.8pt + ink), {
+    caps([The crux], size: 7.4pt, weight: 700, fill: ink)
+    v(0.5 * unit)
+    set par(justify: false)
+    text(font: sans, size: 10.2pt, weight: 600, body)
+  })
+
 #let diagram(path, caption) = [#metadata(path) <diagram>] + figure(
   block(width: 100%, inset: (y: 4pt), image(path, width: 100%)),
   caption: caption, placement: auto, numbering: none, supplement: none, kind: "diagram")
 
 // ---------------------------------------------------------------- questions and cases
 
-// Registers an answer for the chapter end and numbers it, e.g. "2.3". Questions belong in
-// numbered chapters: the number is the chapter's, so unnumbered ones would collide.
+// Registers an answer for the chapter end and numbers it, e.g. "2.3" or "R1.1". Questions
+// belong in numbered or tagged chapters: the number uses the chapter's mark, so untagged
+// unnumbered ones would collide.
 #let register(prompt, answer, case: false, body) = context {
+  let tag = chapter-tag.get()
+  let mark = if tag != none { tag } else { str(chapter-of(counter(heading).get())) }
   // This context reads the counter before the step below takes effect, hence the + 1.
-  let n = str(counter(heading).get().first()) + "." + str(question-count.get().first() + 1)
+  let n = mark + "." + str(question-count.get().first() + 1)
   question-count.step()
   answers.update(list => list + ((n: n, prompt: prompt, answer: answer, case: case),))
   [#metadata((n: n, case: case, page: here().page(), folio: folio-at(here()),
@@ -513,7 +661,7 @@
   if meta != none {
     block(above: 0.8 * unit, below: 0pt, sticky: true, caps(meta, size: 7.4pt))
   }
-  heading(level: 2, supplement: [Case], title)
+  heading(level: section-level, supplement: [Case], title)
   body
   register(ask, verdict, case: true, (n, pointer) => block(above: 2 * unit, below: 2 * unit,
     breakable: false, stroke: (left: 1.6pt + ink), inset: (left: 9pt, y: 3pt), {
@@ -541,6 +689,6 @@
       definition,
       align(right, link(ch, text(font: sans, size: 8.4pt, weight: 600, fill: blue,
         context if query(ch).first().numbering == none { "p." + folio-of(ch) }
-          else { str(counter(heading).at(locate(ch)).first()) }))),
+          else { str(chapter-of(counter(heading).at(locate(ch)))) }))),
     )).flatten())
 })
