@@ -75,12 +75,29 @@ class AnswerChecks(unittest.TestCase):
         self.links = Counter({(4, 'Answer 1.1, page 2 →', 4): 1, (4, '← page 2', 4): 1})
         self.assertFalse(self.problems())
 
+    def test_accepts_wrapped_prompt_starting_with_next_answer_number(self):
+        self.questions.append({'n': '1.2', 'page': 3, 'folio': '1'})
+        self.answers.append({'n': '1.2', 'page': 4, 'folio': '2'})
+        self.pages[2] += '\nAnswer 1.2, page 2 →'
+        self.pages[3] = (
+            '1.1  Does the flag shipped in version\n'
+            '     1.2 change the default?\n'
+            '                                                      ← page 1\n'
+            '     First answer\n'
+            '1.2  Second question    ← page 1\n'
+            '     Second answer'
+        )
+        self.links[(3, 'Answer 1.2, page 2 →', 4)] = 1
+        self.links[(4, '← page 1', 3)] = 2
+        self.assertFalse(self.problems())
+
     def test_supports_tagged_chapter_answers(self):
         self.questions = [{'n': 'R1.1', 'page': 3, 'folio': '8'}]
         self.answers = [{'n': 'R1.1', 'page': 4, 'folio': '9'}]
         self.pages = ['', '', 'Answer R1.1, page 9 →', 'Answers\nR1.1  Review prompt    ← page 8\nVerdict']
         self.links = Counter({(3, 'Answer R1.1, page 9 →', 4): 1, (4, '← page 8', 3): 1})
         self.assertIsNotNone(ANSWER_LINK.search('Answer R1.1, page 9 →'))
+        self.assertIsNotNone(ANSWER_LINK.search('Answer R1.5.1, page 9 →'))
         self.assertIsNotNone(ANSWER_LINK.search('Answer A.1, page 9 →'))
         self.assertFalse(self.problems())
 

@@ -17,7 +17,7 @@ TOLERANCE = 1.0  # points
 # Typst hangs punctuation and hyphens slightly into the margin on purpose.
 HANGING = ",.;:-\xad–—)’”"
 SECTION_LABEL = re.compile(r"<sec-[\w.:-]+>")
-ANSWER_LINK = re.compile(r"(?:\bAnswer [A-Za-z0-9-]+\.\d+, page \w+ →|← page \w+)$")
+ANSWER_LINK = re.compile(r"(?:\bAnswer [A-Za-z0-9._-]+\.\d+, page \w+ →|← page \w+)$")
 
 
 def page_texts(pdf, poppler):
@@ -86,12 +86,17 @@ def answer_entry(answer_page, n, next_n):
     """Return answer `n`'s text slice on `answer_page`, or None if `n` is absent."""
     heading = re.search(r"^\s*Answers\s*$", answer_page, re.M)
     region = answer_page[heading.end() :] if heading else answer_page
-    start = re.search(rf"^\s*{re.escape(n)}(?=\s|$)", region, re.M)
+    start = re.search(rf"^([ \t]*){re.escape(n)}(?=\s|$)", region, re.M)
     if not start:
         return None
     tail = region[start.end() :]
     if next_n is not None:
-        nxt = re.search(rf"^\s*{re.escape(next_n)}(?=\s|$)", tail, re.M)
+        # Match the next answer number only at column 1's indent, not wrapped prompt text
+        # indented into column 2.
+        max_indent = len(start.group(1)) + 1
+        nxt = re.search(
+            rf"^[ \t]{{0,{max_indent}}}{re.escape(next_n)}(?=\s|$)", tail, re.M
+        )
         if nxt:
             tail = tail[: nxt.start()]
     return region[start.start() : start.end()] + tail
