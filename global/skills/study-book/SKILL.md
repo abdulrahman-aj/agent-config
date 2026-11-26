@@ -77,8 +77,8 @@ below.
   each label's rule before the first entry, and have every rating say when it holds and
   what evidence would change it.
 - Point to one official, free place to learn a tool when printed code needs it, the book
-  tells the reader to adopt it, or a position recommends it without teaching it. Print
-  the full URL and verify the pointer's claim against that page.
+  tells the reader to adopt it, or a position recommends it without teaching it. Put the
+  URL in a `#web()` footnote and verify the pointer's claim against that page.
 - Build one sample chapter end to end and review it with the user before the rest.
 
 ## Write to teach

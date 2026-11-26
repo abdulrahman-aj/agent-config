@@ -17,7 +17,7 @@ TOLERANCE = 1.0  # points
 # Typst hangs punctuation and hyphens slightly into the margin on purpose.
 HANGING = ",.;:-\xad–—)’”"
 SECTION_LABEL = re.compile(r"<sec-[\w.:-]+>")
-ANSWER_LINK = re.compile(r"(?:\bAnswer \d+\.\d+, page \w+ →|← page \w+)$")
+ANSWER_LINK = re.compile(r"(?:\bAnswer [A-Za-z0-9-]+\.\d+, page \w+ →|← page \w+)$")
 
 
 def page_texts(pdf, poppler):
@@ -82,10 +82,31 @@ def answer_links(pdf, poppler):
     return links
 
 
+def answer_entry(answer_page, n, next_n):
+    """Return answer `n`'s text slice on `answer_page`, or None if `n` is absent."""
+    heading = re.search(r"^\s*Answers\s*$", answer_page, re.M)
+    region = answer_page[heading.end() :] if heading else answer_page
+    start = re.search(rf"^\s*{re.escape(n)}(?=\s|$)", region, re.M)
+    if not start:
+        return None
+    tail = region[start.end() :]
+    if next_n is not None:
+        nxt = re.search(rf"^\s*{re.escape(next_n)}(?=\s|$)", tail, re.M)
+        if nxt:
+            tail = tail[: nxt.start()]
+    return region[start.start() : start.end()] + tail
+
+
 def check_answers(questions, answers, texts, links):
     problems = []
     expected_links = Counter()
     by_number = {a["n"]: a for a in answers}
+    next_on_page = {}
+    for index, a in enumerate(answers):
+        for later in answers[index + 1 :]:
+            if later["page"] == a["page"]:
+                next_on_page[a["n"]] = later["n"]
+                break
     for q in questions:
         n = q["n"]
         a = by_number.get(n)
@@ -105,8 +126,11 @@ def check_answers(questions, answers, texts, links):
             )
         answer_page = texts[a["page"] - 1]
         backlink = f"← page {q['folio']}"
-        if not re.search(
-            rf"^\s*{re.escape(n)}\s.*{re.escape(backlink)}\s*$", answer_page, re.M
+        entry = answer_entry(answer_page, n, next_on_page.get(n))
+        # A long inline-code token in a prompt can push the back link onto its own line in
+        # `pdftotext -layout`, so match it anywhere within this answer's slice.
+        if entry is None or not re.search(
+            rf"(?:^|\s){re.escape(backlink)}(?=\s|$)", entry, re.M
         ):
             problems.append(
                 f"answer {n}: back link on page {a['folio']} does not say page {q['folio']}"
@@ -202,6 +226,7 @@ def run(pdf, typst):
     probes = typst.query("<fit>")
     chapters = typst.query("<chapter-open>")
     part_pages = {p["page"] for p in typst.query("<part-open>")}
+    answer_breaks = {p["page"] for p in typst.query("<answers-break>")}
     diagrams = typst.query("<diagram>")
 
     numbered = sum(1 for c in chapters if c["numbered"])
@@ -241,6 +266,8 @@ def run(pdf, typst):
             reason = "a chapter's last page"
         elif page in part_pages:
             reason = "a part opener"
+        elif page in answer_breaks:
+            reason = "a tagged chapter's last page before its answers"
         else:
             reason = "unexpected"
         print(f"   page {page}: {fill:.0%} full, {reason}")
@@ -254,6 +281,7 @@ def run(pdf, typst):
         and 0.5 <= fill < 0.88
         and page not in chapter_ends
         and page not in part_pages
+        and page not in answer_breaks
         and page < len(fills)
         and texts[page].strip()
     ]

@@ -1,4 +1,4 @@
-// A book with two numbered chapters that exercises the template's interface.
+// A book with two numbered chapters and a tagged review that exercises the template's interface.
 // Build: python3 ../build.py book.typ
 #import "template.typ": *
 
@@ -26,8 +26,6 @@ $ mkdir scratch && cd scratch && git init -q -b main
 #part("Objects and references")[
 Read the files Git writes for a snapshot, then use its history of references to recover work.
 ]
-
-#group("Reading the repository")
 
 #chapter("Three kinds of object", label: <ch-objects>)[
 #takeaways[
@@ -82,8 +80,9 @@ $ git cat-file -p HEAD^{tree}
 >> 100644 blob ce013625030ba8dba906f756967f9e9ca394464a	greeting.txt
 ```
 
-The blob id in the tree is the one `hash-object` printed in
-#link(<sec-blobs>)[Blobs]. Git computed the same name for the same bytes.
+The blob id in the tree is the one `hash-object` printed in @sec-blobs. Git computed the
+same name for the same bytes. See the `git-cat-file` manual for its other inspection
+flags.#web("https://git-scm.com/docs/git-cat-file")
 
 #table(columns: (auto, 1fr, 1fr),
   [Object], [Holds], [Changes when],
@@ -130,6 +129,9 @@ until garbage collection decides nothing needs it.
 
 == The reflog
 
+#crux[You just ran `git reset --hard` and watched a commit vanish from `git log`. Is the
+commit gone from `.git/objects`, and what still keeps it reachable?]
+
 Every time `HEAD` moves, Git appends the old and new ids to the _reflog_. Here
 `reset --hard` throws away the second commit. Use its reflog entry to create the rescue
 branch before the next exercise:
@@ -163,7 +165,8 @@ fatal: Not a valid object name 3428417
 
 Two separate steps had to happen: the reflog entry expired, then `gc` deleted the
 unreachable object. On a normal repository the first step waits 30 days for unreachable
-entries (`gc.reflogExpireUnreachable`).
+entries (`gc.reflogExpireUnreachable`), documented under `git-reflog` and
+`git-gc`.#web("https://git-scm.com/docs/git-reflog", "https://git-scm.com/docs/git-gc")
 ]
 
 #aside[Each branch has its own reflog under `.git/logs/refs/heads/`. Reflogs are local.
@@ -183,9 +186,23 @@ help; a hosted remote gives you no reflog to run. They were wrong that it matter
 ]
 
 #question[`git reflog` shows the commit you want, 45 days old, reached only through
-`HEAD@{57}`. Is it still safe to wait until tomorrow to recover it?][Not by default. Entries
-for unreachable commits expire after 30 days, so this one survives only because nothing
-has run `gc` with expiry since, and the next automatic `gc` may delete it. Branch it now.]
+`HEAD@{57}` under default `gc.reflogExpireUnreachable`. Is it safe to wait until
+tomorrow?][Not by default. Entries for unreachable commits expire after 30 days, so this
+one survives only because nothing has run `gc` with expiry since, and the next automatic
+`gc` may delete it. Branch it now.]
+]
+
+#chapter("Review: objects and recovery", numbered: false, tag: "R1", label: <rv-git>)[
+This review combines @ch-objects and chapter #chapter-number(<ch-refs>). Answer before
+turning the page to the answer.
+
+#question[A teammate ran `git commit --amend` to fix a typo in a commit message and now
+wants the old commit message back. Which objects from the old commit still exist, and how
+would you inspect them?][The old commit object still exists in `.git/objects`, kept
+reachable by the local reflog (`HEAD@{1}`), while its tree and blobs are shared with the
+amended commit because the file contents did not change. Run `git reflog` to find the old
+commit id and `git cat-file -p <id>` to read its message; create a branch at that id if
+you need to keep it past `gc.reflogExpireUnreachable` (30 days).]
 ]
 
 #chapter("Glossary", numbered: false)[
