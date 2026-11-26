@@ -3,13 +3,12 @@
 
 COMMAND runs from the current directory through `bash -c`: one word is a shell
 command line (`heavy -- 'cd lab && make'`), several are an argv (`heavy -- touch
-"my file"`). On a peer it runs in a copy of the git worktree at the same path
-relative to home, uncommitted edits included, with a linked worktree's common
-.git mirrored under ~/.cache/heavy/git so worktree pointers and Nix resolve
-without touching any checkout on the peer. Concurrency is capped at one slot
-per 10 GiB of host RAM (minimum 1) on whichever host runs the job; more wait
-for a slot. heavy prints its own `heavy:` lines to stderr and exits with the
-job's status.
+"my file"`). On a peer it runs in a dedicated staging directory under
+~/.cache/heavy/work/<id>/tree (uncommitted edits included); linked worktrees get
+their own copy of the common .git dir under ~/.cache/heavy/work/<id>/git so
+concurrent jobs never share refs or touch any real checkout on the peer.
+Concurrency is capped at one slot per 10 GiB of host RAM (min 1). heavy prints
+`heavy:` lines to stderr and exits with the job's status.
 """
 
 import argparse
@@ -25,72 +24,89 @@ import signal
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
 SSH = os.environ.get("HEAVY_SSH", "ssh")
 CONNECT_TIMEOUT = 5  # seconds; per-peer ssh timeout for probing and transport
 SSH_ARGS = [SSH, "-o", "BatchMode=yes", "-o", f"ConnectTimeout={CONNECT_TIMEOUT}"]
-RSH = shlex.join(SSH_ARGS)  # rsync -e
-LOCK_DIR = os.environ.get("HEAVY_LOCK_DIR", "/tmp/heavy")
+LOCK_DIR = os.environ.get("HEAVY_LOCK_DIR") or f"/tmp/heavy-{os.getuid()}"
+STAGE_ROOT = ".cache/heavy/work"
 GRACE = 10  # seconds between SIGTERM and SIGKILL for the job's process group
 FAILED = 255  # heavy's own failures; the job didn't run or its status was lost
-# Starts the remote script's protocol lines on stderr. The per-run token keeps job
-# output from passing for one.
-MARK = f"\x1eheavy-{secrets.token_hex(8)} ".encode()
+DENIED = object()  # peer began denying before the remote job started
+MARK = f"\x1eheavy-{secrets.token_hex(8)} ".encode()  # per-run protocol prefix on stderr
 
 EPILOG = """\
 routing:
-  If AGENT_HEAVY_JOBS is not `deny` on this machine, heavy runs the job here,
-  always. If AGENT_HEAVY_JOBS=deny, heavy reads online Linux peers from
-  `tailscale status --json`, sorts them by peer name, probes each over ssh as
-  the current user, and picks the first that answers and does not set
-  AGENT_HEAVY_JOBS=deny. If no eligible peer answers, heavy runs here as a
-  fallback with AGENT_HEAVY_JOBS unset for that job.
+  If AGENT_HEAVY_JOBS is not `deny` here, heavy runs locally, always.
+  If AGENT_HEAVY_JOBS=deny, heavy reads your own online Linux peers from
+  `tailscale status --json`, sorts by full MagicDNS name (or Tailscale IP),
+  probes each over ssh as the current user, and picks the first eligible peer
+  (deny is re-checked before starting the job). If none answers, heavy runs
+  here with AGENT_HEAVY_JOBS unset for that job.
 
-repo files (at the worktree root, both optional):
-  .heavyignore    rsync exclude patterns for the copy (gitignore isn't used:
-                  a job may need ignored files such as node_modules). Don't
-                  exclude .git: a worktree copy needs its pointer.
-  .heavy-cleanup  bash script run at the root after the job ends, even when
-                  it was interrupted (for example, stop a database it started)
+staging and repo files:
+  Staged copies live under ~/.cache/heavy/work on the peer. Remove old ones:
+    rm -rf ~/.cache/heavy/work
+  .heavyignore    (worktree root) rsync exclude patterns; don't exclude .git
+  .heavy-cleanup  (worktree root) bash script run after the job, even on signal
 
 exit codes:
-  the job's own status, unchanged; 128+N if heavy got signal N; 255 if heavy
-  failed itself (see its heavy: lines) or lost the remote job; 2 bad arguments
+  job status unchanged; 128+N on signal N; 255 on heavy failure; 2 bad args
 
-To stop a job, send heavy (or its agent-wait group) TERM, INT or HUP: heavy kills
-the job's process group, here or on the peer, then runs .heavy-cleanup. A KILL
-leaves a local job running; a remote one still stops when its ssh pipe closes.
+Send heavy (or its agent-wait group) TERM, INT or HUP to stop the job's process
+group (here or on the peer) and run .heavy-cleanup. A KILL leaves a local job
+running; a remote one still stops when its ssh pipe closes.
 """
 
-# Checks login env, systemd user env and environment.d so a deny configured in
+# Checks login env, systemd user env, and environment.d so a deny in
 # ~/.config/environment.d/*.conf is seen even over non-session ssh.
-PROBE_SCRIPT = r"""
-[ "${AGENT_HEAVY_JOBS:-}" = deny ] && exit 10
-XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
-  systemctl --user show-environment 2>/dev/null | grep -qx 'AGENT_HEAVY_JOBS=deny' && exit 10
-gen=
-for p in /usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator \
-         /lib/systemd/user-environment-generators/30-systemd-environment-d-generator; do
-  [ -x "$p" ] && gen=$p && break
-done
-if [ -n "$gen" ]; then
-  "$gen" 2>/dev/null | grep -qx 'AGENT_HEAVY_JOBS=deny' && exit 10
-else
-  grep -qxs 'AGENT_HEAVY_JOBS=deny' "${XDG_CONFIG_HOME:-$HOME/.config}"/environment.d/*.conf && exit 10
-fi
-exit 0
+DENY_CHECK = r"""
+is_denied() {
+  [ "${AGENT_HEAVY_JOBS:-}" = deny ] && return 0
+  XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+    systemctl --user show-environment 2>/dev/null | grep -qx 'AGENT_HEAVY_JOBS=deny' && return 0
+  for p in /usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator \
+           /lib/systemd/user-environment-generators/30-systemd-environment-d-generator; do
+    if [ -x "$p" ]; then "$p" 2>/dev/null | grep -qx 'AGENT_HEAVY_JOBS=deny'; return $?; fi
+  done
+  grep -qxs 'AGENT_HEAVY_JOBS=deny' "${XDG_CONFIG_HOME:-$HOME/.config}"/environment.d/*.conf
+}
 """
 
-# Fed to `bash -l -s` on the peer: a peer's login shell may not be POSIX (e.g.
-# fish), and -l loads the login PATH. Our stdin stays open after the script
-# while local heavy lives, so EOF there means heavy was stopped or lost. The
-# braces make bash read the whole script before running any of it; otherwise
-# the watcher's cat would swallow the unread rest of the script from stdin.
+PROBE_SCRIPT = DENY_CHECK + "\nis_denied && exit 10\nexit 0\n"
+
+# Creates the staging dir and refuses symlinked parents or any path resolving
+# outside ~/.cache/heavy/work before rsync --delete ever runs.
+PREPARE_SCRIPT = r"""
+set -e
+id={stage_id}; need_git={need_git}; root="$HOME/.cache/heavy/work"
+case "$id" in ''|*[!0-9a-f]*) echo "heavy: invalid staging id: $id" >&2; exit 1 ;; esac
+for p in "$HOME/.cache" "$HOME/.cache/heavy" "$root" "$root/$id" "$root/$id/tree" ${need_git:+"$root/$id/git"}; do
+  [ -L "$p" ] && { echo "heavy: refusing symlink in staging path: $p" >&2; exit 1; }
+done
+mkdir -p -- "$root/$id/tree"
+if [ -n "$need_git" ]; then mkdir -p -- "$root/$id/git"; fi
+real_root=$(cd -P -- "$root" && pwd -P)
+for sub in tree ${need_git:+git}; do
+  real_sub=$(cd -P -- "$root/$id/$sub" && pwd -P)
+  case "$real_sub" in "$real_root"/*) ;; *)
+    echo "heavy: staging path $real_sub is outside $real_root" >&2; exit 1 ;;
+  esac
+done
+"""
+
+# Fed to `bash -l -s` on the peer: login shells may not be POSIX (e.g. fish),
+# and -l loads the login PATH. Stdin stays open while local heavy lives, so EOF
+# means heavy stopped or died. Braces make bash parse the whole script first so
+# the watcher's cat doesn't swallow unread script lines.
 REMOTE_SCRIPT = r"""{
 set -m  # job control: the job gets its own process group, so one kill reaches all of it
 mark() { printf '\036{mark} %s\n' "$*" >&2; }
+{deny_check}
+if is_denied; then mark denied; exit 10; fi
 stop() {
   stopped=1
   if [ -n "${pid:-}" ]; then
@@ -103,20 +119,22 @@ stop() {
 trap stop TERM INT HUP
 (cat >/dev/null; kill -TERM $$) >/dev/null 2>&1 &
 watcher=$!
-if [ -n {mirror_gitdir} ]; then
-  root_path="$HOME"/{root}
-  gitdir_path="$HOME"/{mirror_gitdir}
-  printf 'gitdir: %s\n' "$gitdir_path" > "$root_path/.git"
-  [ -f "$gitdir_path/gitdir" ] && printf '%s/.git\n' "$root_path" > "$gitdir_path/gitdir"
+fail() { mark "$@"; kill -- "-$watcher" 2>/dev/null; exit 255; }
+tree_path="$HOME"/{stage_tree}
+if [ -n {stage_gitdir} ]; then
+  gitdir_path="$HOME"/{stage_gitdir}
+  printf 'gitdir: %s\n' "$gitdir_path" > "$tree_path/.git"
+  [ -f "$gitdir_path/gitdir" ] && printf '%s/.git\n' "$tree_path" > "$gitdir_path/gitdir"
 fi
 # One slot per 10 GiB of host RAM (min 1): an 8 GiB VM or heavy build needs ~10 GiB with headroom.
 slots=$(awk '/^MemTotal:/ {s = int($2 / 10485760); print (s < 1 ? 1 : s)}' /proc/meminfo 2>/dev/null)
 slots=${slots:-1}
-mkdir -p {lock_dir}
+lock_dir={lock_dir}; lock_dir=${lock_dir:-/tmp/heavy-$(id -u)}
+mkdir -m 700 -p -- "$lock_dir" || fail lock-failed "$lock_dir"
 while [ -z "${stopped:-}" ]; do
   for slot in $(seq 1 "$slots"); do
     # fd 9 holds the slot. Jobs get 9>&- so a daemon they start can't inherit it.
-    exec 9>{lock_dir}/slot-$slot.lock
+    exec 9>"$lock_dir/slot-$slot.lock" || fail lock-failed "$lock_dir/slot-$slot.lock"
     flock -n 9 && break 2
   done
   exec 9>&-
@@ -124,52 +142,27 @@ while [ -z "${stopped:-}" ]; do
 done
 if [ -n "${stopped:-}" ]; then rc=143; else
   mark slot "$slot/$slots"
-  (cd {cwd} && exec bash -c -- {command}) 9>&- </dev/null &
+  (cd "$HOME"/{stage_cwd} && exec bash -c -- {command}) 9>&- </dev/null &
   pid=$!
   [ -n "${stopped:-}" ] && stop  # a stop that came between the check and the start
   while :; do
     wait "$pid"; rc=$?
     kill -0 "$pid" 2>/dev/null || break  # wait returned early for the trap
   done
-  # TERM what the job left in its group, and KILL the group if anything outlives
-  # GRACE: a survivor would also hold ssh's pipes open.
+  # TERM what the job left in its group, and KILL if anything outlives GRACE.
   kill -TERM -- "-$pid" 2>/dev/null
   for _ in $(seq {grace_tenths}); do kill -0 -- "-$pid" 2>/dev/null || break; sleep 0.1; done
   kill -KILL -- "-$pid" 2>/dev/null
   [ -n "${timer:-}" ] && kill -- "-$timer" 2>/dev/null
   mark job-done
-  if [ -f {root}/.heavy-cleanup ]; then
-    (cd {root} && bash .heavy-cleanup) 9>&- </dev/null || mark cleanup-failed $?
+  if [ -f "$tree_path/.heavy-cleanup" ]; then
+    (cd "$tree_path" && bash .heavy-cleanup) 9>&- </dev/null || mark cleanup-failed $?
   fi
 fi
 kill -- "-$watcher" 2>/dev/null
 mark exit "$rc"
 exit "$rc"
 }
-"""
-
-# Refuses to overwrite a directory heavy didn't create: a peer may hold a real
-# checkout at the same path. heavy records its copies in a list there.
-PREPARE_SCRIPT = r"""
-set -e
-list=~/.local/state/heavy/copies
-mkdir -p ~/.local/state/heavy && touch "$list"
-exec 8>>"$list" && flock 8  # one prepare at a time, so two first runs can't both claim a path
-listed() { grep -qxF -- "$1" "$list"; }
-owned() {
-  listed "$1" && return 0
-  local up=$1
-  while [ "$up" != "${up%/*}" ]; do up=${up%/*}; listed "$up" && return 0; done
-  return 1
-}
-dir={dir}
-mirror_dir={mirror_dir}
-if { [ -e "$dir" ] || [ -L "$dir" ]; } && ! owned "$dir"; then
-  echo "heavy: $dir already exists on $(uname -n) and isn't a heavy copy; not overwriting it" >&2
-  exit 1
-fi
-mkdir -p -- "$dir" && { listed "$dir" || printf '%s\n' "$dir" >> "$list"; }
-if [ -n "$mirror_dir" ]; then mkdir -p -- "$mirror_dir"; fi
 """
 
 stop_signal = None
@@ -179,8 +172,12 @@ def say(message):
     print(f"heavy: {message}", file=sys.stderr, flush=True)
 
 
+def render(template, values):
+    return re.sub(r"\{([a-z_]+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
+
+
 def host_slots():
-    """One slot per 10 GiB of host RAM (at least 1): an 8 GiB VM or heavy build needs ~10 GiB with headroom."""
+    """One slot per 10 GiB of host RAM (min 1): an 8 GiB VM or heavy build needs ~10 GiB with headroom."""
     try:
         with open("/proc/meminfo") as f:
             for line in f:
@@ -192,86 +189,60 @@ def host_slots():
 
 
 def git(*args):
-    result = subprocess.run(["git", *args], capture_output=True, text=True)
-    return result.stdout.strip() if result.returncode == 0 else None
+    res = subprocess.run(["git", *args], capture_output=True, text=True)
+    return res.stdout.strip() if res.returncode == 0 else None
 
 
-def lock_path(kind, key):
-    os.makedirs(LOCK_DIR, exist_ok=True)
-    return os.path.join(LOCK_DIR, f"{kind}-{hashlib.sha1(key.encode()).hexdigest()[:16]}.lock")
+def stage_id(root):
+    """Stable 12-hex id for one (source host, worktree) pair."""
+    try:
+        with open("/etc/machine-id") as f:
+            host_id = f.read().strip()
+    except OSError:
+        host_id = ""
+    return hashlib.sha256(f"{host_id or socket.gethostname()}\0{os.path.realpath(root)}".encode()).hexdigest()[:12]
 
 
-def acquire(path):
-    """Block until we hold the lock; return its fd, or None if a signal came first.
+def acquire_any(paths):
+    """Block until one lock in `paths` is held; return (1-based index, fd), or (None, None) on signal.
 
-    Python opens fds non-inheritable, so neither the job nor a daemon it starts
-    can keep holding the lock after heavy exits.
+    Python opens fds non-inheritable so children never keep holding locks.
+    Open or non-busy flock errors raise OSError immediately instead of looping.
     """
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o644)
-    while stop_signal is None:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return fd
-        except BlockingIOError:
-            time.sleep(0.5)
-    os.close(fd)
-    return None
-
-
-def acquire_slot(slots):
-    """Block until we hold one of `slots` slot locks; return (slot, fd), or (None, None)
-    if a signal came first. A busy slot is a lock we couldn't take, never an exit code."""
-    os.makedirs(LOCK_DIR, exist_ok=True)
-    fds = [os.open(os.path.join(LOCK_DIR, f"slot-{n}.lock"), os.O_WRONLY | os.O_CREAT, 0o644)
-           for n in range(1, slots + 1)]
-    held = (None, None)
-    while stop_signal is None and held[0] is None:
-        for n, fd in enumerate(fds, 1):
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                held = (n, fd)
-                break
-            except BlockingIOError:
-                pass
-        else:
-            time.sleep(0.5)
-    for fd in fds:
-        if fd != held[1]:
+    os.makedirs(LOCK_DIR, mode=0o700, exist_ok=True)
+    fds = []
+    try:
+        fds = [os.open(p, os.O_WRONLY | os.O_CREAT, 0o600) for p in paths]
+        held = (None, None)
+        while stop_signal is None and held[0] is None:
+            for idx, fd in enumerate(fds, 1):
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    held = (idx, fd)
+                    break
+                except BlockingIOError:
+                    pass
+            else:
+                time.sleep(0.5)
+        for fd in fds:
+            if fd != held[1]:
+                os.close(fd)
+        return held
+    except OSError:
+        for fd in fds:
             os.close(fd)
-    return held
+        raise
 
 
-def run_local(command, root, outs, lift_deny=False):
-    started = time.monotonic()
-    slots = host_slots()
-    slot, slot_fd = acquire_slot(slots)
-    if slot is None:
-        return 128 + stop_signal
-    queued = time.monotonic() - started
-    say(f"running on {socket.gethostname()}, slot {slot}/{slots}, after {queued:.1f}s in queue")
-    job_env = {k: v for k, v in os.environ.items() if k != "AGENT_HEAVY_JOBS"} if lift_deny else None
-    job = subprocess.Popen(["bash", "-c", "--", command], stdin=subprocess.DEVNULL,
-                           env=job_env, start_new_session=True)
-    stopper = threading.Thread(target=stop_local, args=(job,), daemon=True)
-    stopper.start()
-    rc = job.wait()
-    rc = 128 - rc if rc < 0 else rc
-    drain_group(job.pid)
-    job_time = time.monotonic() - started - queued
-    cleanup(root)
-    os.close(slot_fd)
-    if outs:
-        say("--out: the job ran in place here, nothing to copy back")
-    if stop_signal is not None:
-        rc = 128 + stop_signal
-    say(f"done on {socket.gethostname()}: queue {queued:.1f}s, job {job_time:.1f}s, "
-        f"total {time.monotonic() - started:.1f}s, exit {rc}")
-    return rc
+def kill_group(pgid, sig):
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def stop_local(job):
-    """On a signal, TERM the job's group, and KILL it after GRACE if the leader ignores
-    TERM: the main thread's wait can't end while the leader lives."""
+    """On a signal, TERM the job's group, and KILL after GRACE if the leader ignores TERM."""
     while job.poll() is None and stop_signal is None:
         time.sleep(0.2)
     if job.poll() is not None:
@@ -285,7 +256,6 @@ def stop_local(job):
 
 
 def drain_group(pgid):
-    """TERM what the job left in its group, and KILL the group if anything outlives GRACE."""
     kill_group(pgid, signal.SIGTERM)
     deadline = time.monotonic() + GRACE
     while time.monotonic() < deadline:
@@ -297,179 +267,171 @@ def drain_group(pgid):
     kill_group(pgid, signal.SIGKILL)
 
 
-def kill_group(pgid, sig):
+def run_local(command, root, outs, lift_deny=False):
+    started = time.monotonic()
+    slots = host_slots()
     try:
-        os.killpg(pgid, sig)
-    except (ProcessLookupError, PermissionError):
-        pass
-
-
-def cleanup(root):
+        slot, slot_fd = acquire_any([os.path.join(LOCK_DIR, f"slot-{n}.lock") for n in range(1, slots + 1)])
+    except OSError as err:
+        say(f"can't open slot lock in {LOCK_DIR}: {err}")
+        return FAILED
+    if slot is None:
+        return 128 + stop_signal
+    queued = time.monotonic() - started
+    say(f"running on {socket.gethostname()}, slot {slot}/{slots}, after {queued:.1f}s in queue")
+    job_env = {k: v for k, v in os.environ.items() if k != "AGENT_HEAVY_JOBS"} if lift_deny else None
+    job = subprocess.Popen(["bash", "-c", "--", command], stdin=subprocess.DEVNULL,
+                           env=job_env, start_new_session=True)
+    threading.Thread(target=stop_local, args=(job,), daemon=True).start()
+    rc = job.wait()
+    rc = 128 - rc if rc < 0 else rc
+    drain_group(job.pid)
+    job_time = time.monotonic() - started - queued
     if root and os.path.isfile(os.path.join(root, ".heavy-cleanup")):
-        rc = subprocess.call(["bash", ".heavy-cleanup"], cwd=root, stdin=subprocess.DEVNULL)
-        if rc:
-            say(f".heavy-cleanup exited {rc}")
-
-
-def home_relative(path, peer):
-    """The copy lives at the same path relative to home on the peer, or None if path isn't under home."""
-    home = os.path.realpath(os.path.expanduser("~"))
-    real = os.path.realpath(path)
-    if os.path.commonpath([home, real]) != home or real == home:
-        say(f"{path} isn't under {home}; the copy needs the same path on {peer}")
-        return None
-    return os.path.relpath(real, home)
-
-
-def rsync(*args):
-    return subprocess.call(["rsync", "-a", "-e", RSH, *args])
+        if (crc := subprocess.call(["bash", ".heavy-cleanup"], cwd=root, stdin=subprocess.DEVNULL)):
+            say(f".heavy-cleanup exited {crc}")
+    os.close(slot_fd)
+    if outs:
+        say("--out: the job ran in place here, nothing to copy back")
+    if stop_signal is not None:
+        rc = 128 + stop_signal
+    say(f"done on {socket.gethostname()}: queue {queued:.1f}s, job {job_time:.1f}s, "
+        f"total {time.monotonic() - started:.1f}s, exit {rc}")
+    return rc
 
 
 def failed(message):
-    """Report heavy's own failure, unless a signal caused it (a Ctrl-C kills rsync too)."""
     if stop_signal is not None:
         return 128 + stop_signal
     say(message)
     return FAILED
 
 
-def render(template, values):
-    return re.sub(r"\{([a-z_]+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
-
-
-def run_remote(command, root, outs, peer, target):
+def run_remote(command, root, outs, peer, target, ssh_args):
     started = time.monotonic()
     if root is None:
         say("a remote run copies the git worktree, and this isn't one")
+        return FAILED
+    real_root = os.path.realpath(root)
+    sub_cwd = os.path.relpath(os.path.realpath(os.getcwd()), real_root)
+    if sub_cwd == ".." or sub_cwd.startswith(".." + os.sep):
+        say(f"{os.getcwd()} resolves outside worktree {root}")
         return FAILED
     common = git("-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir")
     gitdir = git("-C", root, "rev-parse", "--path-format=absolute", "--git-dir")
     if common is None or gitdir is None:
         say(f"git can't find the git dirs of {root}")
         return FAILED
-    common = os.path.realpath(common)
-    gitdir = os.path.realpath(gitdir)
-    # A linked worktree's .git points to the common dir outside the tree: mirror
-    # the common dir under ~/.cache/heavy/git on the peer so it never collides
-    # with a real checkout of the same repo there.
-    mirror = None if common.startswith(os.path.realpath(root) + os.sep) else common
-    rel_root = home_relative(root, peer)
-    rel_cwd = home_relative(os.getcwd(), peer) if rel_root is not None else None
-    if rel_root is None or rel_cwd is None:
-        return FAILED
-    mirror_rel = ""
-    mirror_gitdir = ""
+    common, gitdir = os.path.realpath(common), os.path.realpath(gitdir)
+    mirror = None if common.startswith(real_root + os.sep) else common
+    sid = stage_id(real_root)
+    stage_tree = f"{STAGE_ROOT}/{sid}/tree"
+    stage_cwd = stage_tree if sub_cwd == "." else f"{stage_tree}/{sub_cwd}"
+    stage_git = f"{STAGE_ROOT}/{sid}/git" if mirror else ""
+    stage_gitdir = ""
     if mirror:
         if os.path.commonpath([common, gitdir]) != common:
             say(f"git dir {gitdir} isn't inside common dir {common}")
             return FAILED
-        mirror_rel = f".cache/heavy/git/{hashlib.sha1(common.encode()).hexdigest()[:16]}"
         rel_gitdir = os.path.relpath(gitdir, common)
-        mirror_gitdir = mirror_rel if rel_gitdir == "." else os.path.join(mirror_rel, rel_gitdir)
-    # Two runs of one worktree would overwrite each other's copy.
-    tree_fd = acquire(lock_path("tree", root))
+        stage_gitdir = stage_git if rel_gitdir == "." else f"{stage_git}/{rel_gitdir}"
+    try:
+        _, tree_fd = acquire_any([os.path.join(LOCK_DIR, f"tree-{sid}.lock")])
+    except OSError as err:
+        say(f"can't open worktree lock in {LOCK_DIR}: {err}")
+        return FAILED
     if tree_fd is None:
         return 128 + stop_signal
-    git_fd = acquire(lock_path("git", common)) if mirror else None
-    if mirror and git_fd is None:
-        return 128 + stop_signal
-    queued = time.monotonic() - started
-    sync_started = time.monotonic()
-    prepare_script = render(PREPARE_SCRIPT, {"dir": shlex.quote(rel_root), "mirror_dir": shlex.quote(mirror_rel)})
-    prepare = subprocess.run([*SSH_ARGS, target, "bash", "-s"], input=prepare_script.encode())
-    if prepare.returncode:
-        return failed(f"preparing the copy on {peer} failed (ssh exited {prepare.returncode})")
-    if mirror:
-        rc = rsync("--delete", f"{mirror}/", f"{target}:{mirror_rel}/")
-        os.close(git_fd)
-        if rc:
-            return failed(f"mirroring {mirror} failed (rsync {rc})")
-    ignore = os.path.join(root, ".heavyignore")
-    rc = rsync("--delete", *([f"--exclude-from={ignore}"] if os.path.isfile(ignore) else []),
-               f"{root}/", f"{target}:{rel_root}/")
-    if rc:
-        return failed(f"copying {root} failed (rsync {rc})")
-    if stop_signal is not None:
-        return 128 + stop_signal
-    sync_time = time.monotonic() - sync_started
-    script = render(REMOTE_SCRIPT, {
-        "mark": MARK[1:-1].decode(), "grace": str(GRACE), "grace_tenths": str(GRACE * 10),
-        "lock_dir": shlex.quote(LOCK_DIR), "cwd": shlex.quote(rel_cwd),
-        "root": shlex.quote(rel_root), "mirror_gitdir": shlex.quote(mirror_gitdir),
-        "command": shlex.quote(command),
-    })
-    job_started = time.monotonic()
-    # Its own session keeps a Ctrl-C or a group kill (agent-wait) off ssh: heavy then closes
-    # ssh's stdin and still hears the remote exit. If heavy dies, the pipe closes all the same.
-    ssh = subprocess.Popen([*SSH_ARGS, target, "bash", "-l", "-s"],
-                           stdin=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+    rsh = shlex.join(ssh_args)
     try:
-        ssh.stdin.write(script.encode())
-        ssh.stdin.flush()
-    except (BrokenPipeError, ValueError):  # ssh died, or a signal closed its stdin already
-        pass
-    events = {}
-    pump = threading.Thread(target=pump_stderr, args=(ssh.stderr, events, job_started, peer), daemon=True)
-    pump.start()
-    stopper = threading.Thread(target=stop_remote, args=(ssh,), daemon=True)
-    stopper.start()
-    ssh.wait()
-    pump.join()
-    slot_at = events.get("slot", (None, job_started))[1]
-    done_at = events.get("job-done", (None, time.monotonic()))[1]
-    copy_started = time.monotonic()
-    for out in outs if "exit" in events else []:  # a lost connection has nothing to copy from
-        copy_back(out, rel_root, root, peer, target)
-    copy_time = time.monotonic() - copy_started
-    os.close(tree_fd)
-    if "exit" not in events:
-        say(f"lost the job on {peer} (ssh exited {ssh.returncode})")
-        return 128 + stop_signal if stop_signal is not None else FAILED
-    rc = int(events["exit"][0])
-    if stop_signal is not None:
-        rc = 128 + stop_signal
-    say(f"done on {peer}: queue {queued + slot_at - job_started:.1f}s, sync {sync_time:.1f}s, "
-        f"job {done_at - slot_at:.1f}s, copy-back {copy_time:.1f}s, "
-        f"total {time.monotonic() - started:.1f}s, exit {rc}")
-    return rc
+        queued = time.monotonic() - started
+        sync_started = time.monotonic()
+        prep = render(PREPARE_SCRIPT, {"stage_id": shlex.quote(sid), "need_git": "1" if mirror else "''"})
+        if (rc := subprocess.run([*ssh_args, target, "bash", "-s"], input=prep.encode()).returncode):
+            return failed(f"preparing staging dir on {peer} failed (ssh exited {rc})")
+        if mirror:
+            if (rc := subprocess.call(["rsync", "-a", "-e", rsh, "--delete", f"{mirror}/", f"{target}:{stage_git}/"])):
+                return failed(f"mirroring {mirror} failed (rsync {rc})")
+        ignore = os.path.join(root, ".heavyignore")
+        rc = subprocess.call(["rsync", "-a", "-e", rsh, "--delete",
+                              *([f"--exclude-from={ignore}"] if os.path.isfile(ignore) else []),
+                              f"{root}/", f"{target}:{stage_tree}/"])
+        if rc:
+            return failed(f"copying {root} failed (rsync {rc})")
+        if stop_signal is not None:
+            return 128 + stop_signal
+        sync_time = time.monotonic() - sync_started
+        script = render(REMOTE_SCRIPT, {
+            "mark": MARK[1:-1].decode(), "deny_check": DENY_CHECK,
+            "grace": str(GRACE), "grace_tenths": str(GRACE * 10),
+            "lock_dir": shlex.quote(os.environ.get("HEAVY_LOCK_DIR", "")),
+            "stage_cwd": shlex.quote(stage_cwd), "stage_tree": shlex.quote(stage_tree),
+            "stage_gitdir": shlex.quote(stage_gitdir), "command": shlex.quote(command),
+        })
+        job_started = time.monotonic()
+        # Own session keeps Ctrl-C or group kill (agent-wait) off ssh: heavy closes stdin and still hears exit.
+        ssh = subprocess.Popen([*ssh_args, target, "bash", "-l", "-s"],
+                               stdin=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            ssh.stdin.write(script.encode())
+            ssh.stdin.flush()
+        except (BrokenPipeError, ValueError):
+            pass
+        events = {}
+        pump = threading.Thread(target=pump_stderr, args=(ssh.stderr, events, job_started, peer), daemon=True)
+        pump.start()
+        threading.Thread(target=stop_remote, args=(ssh,), daemon=True).start()
+        ssh.wait()
+        pump.join()
+        if "denied" in events:
+            return DENIED
+        if "lock-failed" in events:
+            say(f"can't open slot lock on {peer}: {events['lock-failed'][0]}")
+            return FAILED
+        slot_at = events.get("slot", (None, job_started))[1]
+        done_at = events.get("job-done", (None, time.monotonic()))[1]
+        copy_started = time.monotonic()
+        for out in outs if "exit" in events else []:  # a lost connection has nothing to copy from
+            copy_back(out, stage_tree, real_root, peer, target, rsh)
+        copy_time = time.monotonic() - copy_started
+        if "exit" not in events:
+            say(f"lost the job on {peer} (ssh exited {ssh.returncode})")
+            return 128 + stop_signal if stop_signal is not None else FAILED
+        rc = 128 + stop_signal if stop_signal is not None else int(events["exit"][0])
+        say(f"done on {peer}: queue {queued + slot_at - job_started:.1f}s, sync {sync_time:.1f}s, "
+            f"job {done_at - slot_at:.1f}s, copy-back {copy_time:.1f}s, "
+            f"total {time.monotonic() - started:.1f}s, exit {rc}")
+        return rc
+    finally:
+        os.close(tree_fd)
 
 
 def pump_stderr(stream, events, job_started, peer):
-    """Pass the remote stderr through, minus the protocol lines, which go to events.
-
-    A protocol line can follow job output that has no final newline, so look for it
-    anywhere in a line, and hold back a partial line only from its first ASCII RS byte on.
-    """
-    fd = stream.fileno()
-    buffer = b""
+    """Pass remote stderr through, minus protocol lines, which go to events."""
+    fd, buf = stream.fileno(), b""
     while chunk := os.read(fd, 65536):
-        buffer += chunk
-        *lines, buffer = buffer.split(b"\n")
+        buf += chunk
+        *lines, buf = buf.split(b"\n")
         for line in lines:
-            text, mark, protocol = line.partition(MARK)
+            text, mark, proto = line.partition(MARK)
             if text or not mark:
                 sys.stderr.buffer.write(text + b"\n")
             if mark:
-                handle(protocol.decode(errors="replace"), events, job_started, peer)
-        held = buffer.find(MARK[:1])
-        sys.stderr.buffer.write(buffer if held < 0 else buffer[:held])
-        buffer = b"" if held < 0 else buffer[held:]
+                name, _, val = proto.decode(errors="replace").partition(" ")
+                events[name] = (val, time.monotonic())
+                if name == "slot":
+                    say(f"running on {peer}, slot {val}, after {time.monotonic() - job_started:.1f}s waiting for it")
+                elif name == "cleanup-failed":
+                    say(f".heavy-cleanup on {peer} exited {val}")
+        held = buf.find(MARK[:1])
+        sys.stderr.buffer.write(buf if held < 0 else buf[:held])
+        buf = b"" if held < 0 else buf[held:]
         sys.stderr.buffer.flush()
-    sys.stderr.buffer.write(buffer)
-
-
-def handle(protocol, events, job_started, peer):
-    name, _, value = protocol.partition(" ")
-    events[name] = (value, time.monotonic())
-    if name == "slot":
-        say(f"running on {peer}, slot {value}, after {time.monotonic() - job_started:.1f}s waiting for it")
-    elif name == "cleanup-failed":
-        say(f".heavy-cleanup on {peer} exited {value}")
+    sys.stderr.buffer.write(buf)
 
 
 def stop_remote(ssh):
-    """On a signal, close the script's stdin: the remote side then kills the job's group
-    and runs .heavy-cleanup. Kill ssh only if that takes far longer than GRACE."""
+    """On a signal, close ssh stdin so the peer kills the job group and runs .heavy-cleanup."""
     while ssh.poll() is None and stop_signal is None:
         time.sleep(0.2)
     if ssh.poll() is not None:
@@ -482,73 +444,76 @@ def stop_remote(ssh):
         ssh.kill()
 
 
-def copy_back(out, rel_root, root, peer, target):
-    """Copy back what the job made or updated: --update skips files that are newer here,
-    and unchanged files match on size and mtime, so rsync skips them too."""
-    path = os.path.relpath(os.path.join(os.getcwd(), out), root)
+def copy_back(out, stage_tree, real_root, peer, target, rsh):
+    """Copy back what the job made or updated; never overwrite .git."""
+    path = os.path.relpath(os.path.realpath(os.path.join(os.getcwd(), out)), real_root)
     if path == ".." or path.startswith(".." + os.sep):
         say(f"--out {out}: outside the worktree, skipped")
         return
-    result = subprocess.run(["rsync", "-aR", "--update", "--out-format=%n", "-e", RSH,
-                             f"{target}:{rel_root}/./{path}", f"{root}/"], capture_output=True, text=True)
-    if result.returncode == 23 and "No such file" in result.stderr:
+    if path == ".git" or path.startswith(".git" + os.sep):
+        say(f"--out {out}: refusing to overwrite .git, skipped")
+        return
+    res = subprocess.run(["rsync", "-aR", "--update", "--exclude=.git", "--out-format=%n", "-e", rsh,
+                          f"{target}:{stage_tree}/./{path}", f"{real_root}/"], capture_output=True, text=True)
+    if res.returncode == 23 and "No such file" in res.stderr:
         say(f"--out {out}: not on {peer} after the job")
-    elif result.returncode:
-        say(f"--out {out}: rsync {result.returncode}: {result.stderr.strip()[-300:]}")
+    elif res.returncode:
+        say(f"--out {out}: rsync {res.returncode}: {res.stderr.strip()[-300:]}")
     else:
-        files = [line for line in result.stdout.splitlines() if not line.endswith("/")]
+        files = [line for line in res.stdout.splitlines() if not line.endswith("/")]
         say(f"--out {out}: copied back {len(files)} file(s)")
 
 
 def tailscale_peers():
-    """Online Linux peer names from `tailscale status --json`, sorted by peer name."""
+    """Own online Linux peers from `tailscale status --json`: (label, host, ssh_host_keys), sorted by host."""
     try:
-        result = subprocess.run(["tailscale", "status", "--json"], stdin=subprocess.DEVNULL,
-                                capture_output=True, text=True, timeout=CONNECT_TIMEOUT)
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if result.returncode != 0:
-        return []
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
+        res = subprocess.run(["tailscale", "status", "--json"], stdin=subprocess.DEVNULL,
+                             capture_output=True, text=True, timeout=CONNECT_TIMEOUT)
+        data = json.loads(res.stdout) if res.returncode == 0 else {}
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         return []
     if data.get("BackendState") not in (None, "Running"):
         return []
-    peers = []
-    for peer in (data.get("Peer") or {}).values():
-        if not isinstance(peer, dict) or not peer.get("Online") or peer.get("ShareeNode"):
+    self_uid = (data.get("Self") or {}).get("UserID")
+    suffix = (data.get("MagicDNSSuffix") or "").strip(".")
+    peers = {}
+    for p in (data.get("Peer") or {}).values():
+        if not isinstance(p, dict) or not p.get("Online") or p.get("ShareeNode"):
             continue
-        if (peer.get("OS") or "").lower() != "linux":
+        if (p.get("OS") or "").lower() != "linux":
             continue
-        dns = (peer.get("DNSName") or "").rstrip(".")
-        name = dns.split(".")[0] if dns else ((peer.get("TailscaleIPs") or [None])[0] or peer.get("HostName") or "")
-        if name and not name.startswith("-") and not any(c.isspace() for c in name):
-            peers.append(name)
-    return sorted(set(peers))
+        if self_uid is not None and p.get("UserID") is not None and p["UserID"] != self_uid:
+            continue
+        dns = (p.get("DNSName") or "").rstrip(".")
+        if suffix and dns and not dns.endswith("." + suffix):
+            continue
+        ips = p.get("TailscaleIPs") or []
+        host = dns or next((a for a in ips if ":" not in a), ips[0] if ips else "")
+        if not host or host.startswith("-") or any(c.isspace() for c in host):
+            continue
+        keys = [k for k in (p.get("sshHostKeys") or []) if isinstance(k, str) and "\n" not in k]
+        peers[host] = (p.get("HostName") or host, host, keys)
+    return [peers[h] for h in sorted(peers)]
 
 
-def probe_peer(target):
-    """True if target answers ssh and does not set AGENT_HEAVY_JOBS=deny."""
+def ssh_args_for(host, host_keys):
+    """Build ssh argv; pass Tailscale-attested sshHostKeys via GlobalKnownHostsFile when present."""
+    if not host_keys:
+        return list(SSH_ARGS), None
+    tmp_dir = "/tmp" if any(c.isspace() for c in tempfile.gettempdir()) else None
+    fd, path = tempfile.mkstemp(prefix="heavy-kh-", dir=tmp_dir)
+    with os.fdopen(fd, "w") as f:
+        for key in host_keys:
+            f.write(f"{host} {key}\n")
+    return [*SSH_ARGS, "-o", f"GlobalKnownHostsFile={path}"], path
+
+
+def probe_peer(target, ssh_args):
     try:
-        result = subprocess.run([*SSH_ARGS, target, "bash", "-l", "-s"],
-                                input=PROBE_SCRIPT.encode(), capture_output=True,
-                                timeout=CONNECT_TIMEOUT + 2)
-        return result.returncode == 0
+        return subprocess.run([*ssh_args, target, "bash", "-l", "-s"], input=PROBE_SCRIPT.encode(),
+                              capture_output=True, timeout=CONNECT_TIMEOUT + 2).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
-
-
-def pick_peer():
-    """First eligible online Linux peer from Tailscale (sorted by peer name), or (None, None)."""
-    user = getpass.getuser()
-    for peer in tailscale_peers():
-        if stop_signal is not None:
-            return None, None
-        target = f"{user}@{peer}"
-        if probe_peer(target):
-            return peer, target
-    return None, None
 
 
 def on_signal(signum, _frame):
@@ -562,8 +527,7 @@ def main():
         description=__doc__, usage="heavy [--out PATH]... [--] COMMAND...",
         epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", action="append", default=[], metavar="PATH",
-                        help="after a remote run, copy PATH (relative to here) back if the job made "
-                             "or updated it; repeatable")
+                        help="after a remote run, copy PATH (relative to here) back if created/updated; repeatable")
     parser.add_argument("command", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
     args = parser.parse_args()
     words = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -574,11 +538,28 @@ def main():
         signal.signal(signum, on_signal)
     root = git("rev-parse", "--show-toplevel")
     if os.environ.get("AGENT_HEAVY_JOBS") == "deny":
-        peer, target = pick_peer()
+        user = getpass.getuser()
+        for label, host, host_keys in tailscale_peers():
+            if stop_signal is not None:
+                return 128 + stop_signal
+            ssh_args, kh_path = ssh_args_for(host, host_keys)
+            try:
+                target = f"{user}@{host}"
+                if not probe_peer(target, ssh_args):
+                    continue
+                rc = run_remote(command, root, args.out, label, target, ssh_args)
+                if rc is DENIED:
+                    say(f"{label} now sets AGENT_HEAVY_JOBS=deny; skipping")
+                    continue
+                return rc
+            finally:
+                if kh_path:
+                    try:
+                        os.unlink(kh_path)
+                    except OSError:
+                        pass
         if stop_signal is not None:
             return 128 + stop_signal
-        if target is not None:
-            return run_remote(command, root, args.out, peer, target)
         say("no eligible peer answered; running here with AGENT_HEAVY_JOBS lifted")
         return run_local(command, root, args.out, lift_deny=True)
     return run_local(command, root, args.out)
