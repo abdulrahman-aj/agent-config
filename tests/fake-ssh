@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Stands in for ssh in tests/test-heavy.py: runs the remote command on this machine
+# with a per-peer HOME under $HEAVY_FAKE_PEERS/<host>, isolated from the caller's
+# AGENT_HEAVY_JOBS and systemd user session.
+while [[ ${1:-} == -* ]]; do
+  case $1 in -o | -l | -p) shift 2 ;; *) shift ;; esac
+done
+host=${1#*@}
+shift
+peer_home="$HEAVY_FAKE_PEERS/$host"
+[ -d "$peer_home" ] || exit 255
+unset AGENT_HEAVY_JOBS DBUS_SESSION_BUS_ADDRESS XDG_CONFIG_HOME
+export HOME="$peer_home" XDG_RUNTIME_DIR="$peer_home/.runtime"
+if [ -f "$peer_home/.deny-after-probe" ]; then
+  rm -f "$peer_home/.deny-after-probe"
+  (cd "$peer_home" && bash -c "$*"); rc=$?
+  mkdir -p "$peer_home/.config/environment.d"
+  printf 'AGENT_HEAVY_JOBS=deny\n' > "$peer_home/.config/environment.d/60-agent-heavy-jobs.conf"
+  exit "$rc"
+fi
+cd "$peer_home" && exec bash -c "$*"
