@@ -119,11 +119,12 @@ below.
   reads the frozen PDF after each major revision to catch unannounced example switches
   and exercises before their rules. Add one fresh-context strong reader for book-wide
   defects.
-- Reviews check accuracy, not teaching. Run a reader probe in book order on rendered PDF
-  or extracted text, never source files where answers sit inline. Have a cold reader
-  write what stuck in at most 150 words without looking back, answer recall questions
-  before peeking and self-grade, and quote where they stumbled. Revise and re-run the
-  same probe to confirm improvement, and test the top can-do goal with a checkable task.
+- Reviews check accuracy, not teaching. Run a per-chapter reader probe in book order on
+  rendered PDF or extracted text, never source files where answers sit inline. Have a
+  cold reader write what stuck in at most 150 words without looking back, answer recall
+  questions before peeking and self-grade, and quote where they stumbled. Revise and
+  re-run the same probe to confirm improvement, and test the top can-do goal with a
+  checkable task.
 - Correctness rounds pull a book toward a spec. Narrow the claim before extending a
   worked example when a review finds a gap; when each round's findings land in prior
   additions, re-cut the scope instead of fixing again.

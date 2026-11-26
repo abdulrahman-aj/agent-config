@@ -45,5 +45,6 @@ nix shell nixpkgs#poppler-utils -c pdftoppm -r 80 -png book.pdf out/page
   `nixpkgs`, and test from a fresh clone:
 
 ```bash
+# <flake-dir> holds flake.lock with locked root input nixpkgs (for example . or ./lab)
 nix shell --inputs-from <flake-dir> nixpkgs#python3 -c python3 tools/typeset/build.py --inputs-from <flake-dir> book/book.typ
 ```
