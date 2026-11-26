@@ -46,8 +46,8 @@ Load this reference when a book has runnable labs or code listings extracted fro
 - When making scratch copies for negative controls, leave out dependency caches, data
   directories and build output so they don't fill `/tmp`, and delete the copy
   afterwards.
-- Avoid module-level environment changes in tests, because one redirected every later
-  test's subprocesses, and run the whole suite from fresh state after each batch.
+- No module-level environment changes in tests, because one redirected every later
+  test's subprocesses; run the whole suite from fresh state after each batch.
 - After merging one lab PR, rebase the remaining lab branches and rerun, because shared
   build targets and fixtures break.
 - Before a release, verify from a fresh clone and fresh state through the book's printed

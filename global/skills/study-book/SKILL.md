@@ -50,7 +50,8 @@ below.
 - When replacing a source, audit its ideas section by section as covered, thin or out of
   scope, again after any restructure. Covering it is the floor, not the frame. Open
   chapters on the reader's problem, explain in the book's voice with one citation, and
-  quote only where the source's words carry the argument.
+  quote only where the source's words carry the argument; chapters built on the source's
+  names read as commentary on it.
 - Transferable lessons state the principle before the exercise or lab and show a second
   context where it behaves differently.
 - Admit a tool only for a decision existing material can't show; put losers on a "what
@@ -95,8 +96,8 @@ below.
   can keep reading without flipping ahead.
 - Run `unslop` over every new passage before committing, then reread every new table
   cell, caption, diagram label and shortened sentence for every, any, only or always,
-  a single outcome where the real one depends on a race or a commit, and one tool's
-  behavior stated as the standard's.
+  a single outcome where the real one depends on a race or a commit, one tool's behavior
+  stated as the standard's, and summaries that drop the conditions making a claim true.
 
 ## Review and finish
 
