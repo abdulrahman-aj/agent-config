@@ -356,8 +356,10 @@ def wait(log, stall_seconds, max_seconds):
             status = latest["exit"]
             if status == 0:
                 return finish(EXITED, "exited", "the job exited 0")
-            hint = ("no exit status recorded; see the log, the job may still run"
-                    if status is None else f"the job exited {status}")
+            # No record means the supervisor died first. `stop` kills the whole
+            # scope, but a kill aimed at the supervisor alone can leave the job running.
+            hint = ("no exit status recorded: stopped or killed; unless `agent-wait stop` "
+                    "did it, the job may still run" if status is None else f"the job exited {status}")
             return finish(FAILED, "exited", hint)
         with suppress(OSError):
             info = os.stat(log)
