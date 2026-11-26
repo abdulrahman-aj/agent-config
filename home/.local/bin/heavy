@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Run a heavy job (a build, a test replay) locally or on an eligible Tailscale peer.
+"""Run a heavy job locally or on an eligible Tailscale peer.
 
-COMMAND runs from the current directory through `bash -c`: one word is a shell
-command line (`heavy -- 'cd lab && make'`), several are an argv (`heavy -- touch
-"my file"`). On a peer it runs in a dedicated staging directory under
-~/.cache/heavy/work/<id>/tree (uncommitted edits included); linked worktrees get
-their own copy of the common .git dir under ~/.cache/heavy/work/<id>/git so
-concurrent jobs never share refs or touch any real checkout on the peer.
-Concurrency is capped at one slot per 10 GiB of host RAM (min 1). heavy prints
-`heavy:` lines to stderr and exits with the job's status.
+COMMAND runs from cwd via `bash -c`: one word is a shell line (`heavy -- 'cd lab
+&& make'`), several are an argv (`heavy -- touch "my file"`). Remote runs stage
+under ~/.cache/heavy/work/<id>/tree (linked worktrees get their own common .git
+copy under .../git) with 1 slot per 10 GiB host RAM (min 1). `heavy:` lines go
+to stderr; exit status is the job's.
 """
 
 import argparse
+import contextlib
 import fcntl
 import getpass
 import hashlib
@@ -33,32 +31,29 @@ CONNECT_TIMEOUT = 5  # seconds; per-peer ssh timeout for probing and transport
 SSH_ARGS = [SSH, "-o", "BatchMode=yes", "-o", f"ConnectTimeout={CONNECT_TIMEOUT}"]
 LOCK_DIR = os.environ.get("HEAVY_LOCK_DIR") or f"/tmp/heavy-{os.getuid()}"
 STAGE_ROOT = ".cache/heavy/work"
-GRACE = 10  # seconds between SIGTERM and SIGKILL for the job's process group
+GRACE = 10  # seconds between SIGTERM and SIGKILL for a job's process group
 FAILED = 255  # heavy's own failures; the job didn't run or its status was lost
 DENIED = object()  # peer began denying before the remote job started
 MARK = f"\x1eheavy-{secrets.token_hex(8)} ".encode()  # per-run protocol prefix on stderr
 
 EPILOG = """\
 routing:
-  If AGENT_HEAVY_JOBS is not `deny` here, heavy runs locally, always.
-  If AGENT_HEAVY_JOBS=deny, heavy reads your own online Linux peers from
+  Non-denying host (AGENT_HEAVY_JOBS != deny): runs locally, always.
+  Denying host (AGENT_HEAVY_JOBS=deny): reads own online Linux peers from
   `tailscale status --json`, sorts by full MagicDNS name (or Tailscale IP),
-  probes each over ssh as the current user, and picks the first eligible peer
-  (deny is re-checked before starting the job). If none answers, heavy runs
-  here with AGENT_HEAVY_JOBS unset for that job.
+  probes over ssh as current user, and picks the first eligible peer (deny is
+  re-checked before starting and after taking a slot). Fallback runs locally
+  with AGENT_HEAVY_JOBS unset for that job.
 
 staging and repo files:
-  Staged copies live under ~/.cache/heavy/work on the peer. Remove old ones:
-    rm -rf ~/.cache/heavy/work
-  .heavyignore    (worktree root) rsync exclude patterns; don't exclude .git
-  .heavy-cleanup  (worktree root) bash script run after the job, even on signal
+  Staged copies live under ~/.cache/heavy/work on the peer (clear with:
+    rm -rf ~/.cache/heavy/work).
+  .heavyignore    rsync excludes at worktree root; don't exclude .git
+  .heavy-cleanup  bash script at worktree root run after job, even on signal
 
-exit codes:
-  job status unchanged; 128+N on signal N; 255 on heavy failure; 2 bad args
-
-Send heavy (or its agent-wait group) TERM, INT or HUP to stop the job's process
-group (here or on the peer) and run .heavy-cleanup. A KILL leaves a local job
-running; a remote one still stops when its ssh pipe closes.
+exit codes: job status unchanged; 128+N on signal N; 255 heavy error; 2 bad args
+TERM/INT/HUP stops the job group (here or on peer) and runs .heavy-cleanup.
+A KILL leaves a local job running; a remote one stops when its ssh pipe closes.
 """
 
 # Checks login env, systemd user env, and environment.d so a deny in
@@ -78,38 +73,31 @@ is_denied() {
 
 PROBE_SCRIPT = DENY_CHECK + "\nis_denied && exit 10\nexit 0\n"
 
-# Fed to `bash -l -s` on the peer: login shells may not be POSIX (e.g. fish),
-# and -l loads the login PATH. Stdin stays open while local heavy lives: after
-# emitting `ready` (staging verified + per-staging-dir lock held on fd 8), it
-# waits for a `go` line (sent after rsync) and then watches stdin for EOF.
-# Braces make bash parse the whole script before running it.
+# Fed to `bash -l -s` on the peer (login shell may be fish; -l loads PATH).
+# Holds per-staging-dir lock (fd 8) from before rsync until --out copy-back ends
+# (stdin EOF). Braces make bash parse the whole script before executing it.
 REMOTE_SCRIPT = r"""{
-set -m  # job control: the job gets its own process group, so one kill reaches all of it
+set -m  # job control: job gets its own process group so one kill reaches all of it
 mark() { (printf '\036{mark} %s\n' "$*" >&2) 8>&- 9>&-; }
+pfail() { [ -n "${1:-}" ] && echo "heavy: $1" >&2; mark prep-failed; exit 255; }
 {deny_check}
 if is_denied; then mark denied; exit 10; fi
 id={stage_id}; need_git={need_git}; root="$HOME/.cache/heavy/work"
-case "$id" in ''|*[!0-9a-f]*) mark prep-failed; exit 255 ;; esac
+case "$id" in ''|*[!0-9a-f]*) pfail ;; esac
 for p in "$HOME/.cache" "$HOME/.cache/heavy" "$root" "$root/$id" "$root/$id/tree" \
          "$root/$id/lock" ${need_git:+"$root/$id/git"}; do
-  [ -L "$p" ] && { echo "heavy: refusing symlink in staging path: $p" >&2; mark prep-failed; exit 255; }
+  [ -L "$p" ] && pfail "refusing symlink in staging path: $p"
 done
-mkdir -p -- "$root/$id/tree" || { mark prep-failed; exit 255; }
-if [ -n "$need_git" ]; then mkdir -p -- "$root/$id/git" || { mark prep-failed; exit 255; }; fi
-real_home=$(cd -P -- "$HOME" && pwd -P) || { mark prep-failed; exit 255; }
-real_root=$(cd -P -- "$root" && pwd -P) || { mark prep-failed; exit 255; }
-[ "$real_root" = "$real_home/.cache/heavy/work" ] || {
-  echo "heavy: staging root $real_root is outside $real_home/.cache/heavy/work" >&2
-  mark prep-failed; exit 255
-}
+mkdir -p -- "$root/$id/tree" || pfail
+if [ -n "$need_git" ]; then mkdir -p -- "$root/$id/git" || pfail; fi
+real_home=$(cd -P -- "$HOME" && pwd -P) || pfail
+real_root=$(cd -P -- "$root" && pwd -P) || pfail
+[ "$real_root" = "$real_home/.cache/heavy/work" ] || pfail "staging root $real_root outside $real_home/.cache/heavy/work"
 for sub in tree ${need_git:+git}; do
-  real_sub=$(cd -P -- "$root/$id/$sub" && pwd -P) || { mark prep-failed; exit 255; }
-  case "$real_sub" in "$real_root"/*) ;; *)
-    echo "heavy: staging path $real_sub is outside $real_root" >&2
-    mark prep-failed; exit 255 ;;
-  esac
+  real_sub=$(cd -P -- "$root/$id/$sub" && pwd -P) || pfail
+  case "$real_sub" in "$real_root"/*) ;; *) pfail "staging path $real_sub outside $real_root" ;; esac
 done
-# Hold the per-staging-dir lock on the peer from before rsync until .heavy-cleanup ends.
+# Hold per-staging-dir lock on peer from before rsync until copy-back finishes.
 exec 8>"$root/$id/lock" || { mark lock-failed "$root/$id/lock"; exit 255; }
 while ! flock -n 8; do
   read -r -t 0.5 _
@@ -122,7 +110,6 @@ stop() {
   stopped=1
   if [ -n "${pid:-}" ]; then
     kill -TERM -- "-$pid" 2>/dev/null
-    # KILLs a leader that ignores TERM: the wait loop below can't end while it lives.
     (sleep {grace}; kill -KILL -- "-$pid" 2>/dev/null) 8>&- 9>&- >/dev/null 2>&1 &
     timer=$!
   fi
@@ -153,19 +140,16 @@ while [ -z "${stopped:-}" ]; do
 done
 if [ -n "${stopped:-}" ]; then rc=143
 elif is_denied; then
-  mark denied
-  kill -- "-$watcher" 2>/dev/null
-  exit 10
+  mark denied; kill -- "-$watcher" 2>/dev/null; exit 10
 else
   mark slot "$slot/$slots"
   (cd "$HOME"/{stage_cwd} && exec bash -c -- {command}) 8>&- 9>&- </dev/null &
   pid=$!
-  [ -n "${stopped:-}" ] && stop  # a stop that came between the check and the start
+  [ -n "${stopped:-}" ] && stop  # stop arrived between check and launch
   while :; do
     wait "$pid"; rc=$?
-    kill -0 "$pid" 2>/dev/null || break  # wait returned early for the trap
+    kill -0 "$pid" 2>/dev/null || break
   done
-  # TERM what the job left in its group, and KILL if anything outlives GRACE.
   kill -TERM -- "-$pid" 2>/dev/null
   for _ in $(seq {grace_tenths}); do kill -0 -- "-$pid" 2>/dev/null || break; sleep 0.1; done
   kill -KILL -- "-$pid" 2>/dev/null
@@ -178,8 +162,7 @@ fi
 kill -- "-$watcher" 2>/dev/null
 exec 9>&-
 mark exit "$rc"
-# Keep fd 8 (staging lock) held until the client finishes --out copy-back and closes stdin.
-cat >/dev/null
+cat >/dev/null  # keep fd 8 held until client finishes --out copy-back and closes stdin
 exit "$rc"
 }
 """
@@ -187,8 +170,15 @@ exit "$rc"
 stop_signal = None
 
 
+def write_stderr(data):
+    if data:
+        with contextlib.suppress(OSError):
+            sys.stderr.buffer.write(data)
+            sys.stderr.buffer.flush()
+
+
 def say(message):
-    print(f"heavy: {message}", file=sys.stderr, flush=True)
+    write_stderr(f"heavy: {message}\n".encode())
 
 
 def render(template, values):
@@ -222,16 +212,16 @@ def stage_id(root):
     return hashlib.sha256(f"{host_id or socket.gethostname()}\0{os.path.realpath(root)}".encode()).hexdigest()[:12]
 
 
-def acquire_any(paths):
-    """Block until one lock in `paths` is held; return (1-based index, fd), or (None, None) on signal.
+def acquire_slot(slots):
+    """Block until one of `slots` locks is held; return (slot, fd), or (None, None) on signal.
 
-    Python opens fds non-inheritable so children never keep holding locks.
-    Open or non-busy flock errors raise OSError immediately instead of looping.
+    Python opens fds non-inheritable; open/non-busy flock errors raise OSError immediately.
     """
     os.makedirs(LOCK_DIR, mode=0o700, exist_ok=True)
     fds = []
     try:
-        fds = [os.open(p, os.O_WRONLY | os.O_CREAT, 0o600) for p in paths]
+        fds = [os.open(os.path.join(LOCK_DIR, f"slot-{n}.lock"), os.O_WRONLY | os.O_CREAT, 0o600)
+               for n in range(1, slots + 1)]
         held = (None, None)
         while stop_signal is None and held[0] is None:
             for idx, fd in enumerate(fds, 1):
@@ -253,44 +243,60 @@ def acquire_any(paths):
         raise
 
 
-def kill_group(pgid, sig):
+def wait_until(done_fn, timeout, step=0.1):
+    deadline = time.monotonic() + timeout
+    while not done_fn() and time.monotonic() < deadline:
+        time.sleep(step)
+    return done_fn()
+
+
+def kill_pid(pid, sig, group=False):
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        (os.killpg if group else os.kill)(pid, sig)
+
+
+def child_pids(pid):
     try:
-        os.killpg(pgid, sig)
-    except (ProcessLookupError, PermissionError):
-        pass
+        with open(f"/proc/{pid}/task/{pid}/children") as f:
+            return [int(x) for x in f.read().split()]
+    except OSError:
+        return []
+
+
+def pid_alive(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rpartition(")")[2].split()[0] not in ("Z", "X")
+    except OSError:
+        return False
 
 
 def stop_local(job):
-    """On a signal, TERM the job's group, and KILL after GRACE if the leader ignores TERM."""
     while job.poll() is None and stop_signal is None:
         time.sleep(0.2)
-    if job.poll() is not None:
-        return
-    kill_group(job.pid, signal.SIGTERM)
-    deadline = time.monotonic() + GRACE
-    while job.poll() is None and time.monotonic() < deadline:
-        time.sleep(0.2)
     if job.poll() is None:
-        kill_group(job.pid, signal.SIGKILL)
+        kill_pid(job.pid, signal.SIGTERM, group=True)
+        if not wait_until(lambda: job.poll() is not None, GRACE, 0.2):
+            kill_pid(job.pid, signal.SIGKILL, group=True)
 
 
 def drain_group(pgid):
-    kill_group(pgid, signal.SIGTERM)
-    deadline = time.monotonic() + GRACE
-    while time.monotonic() < deadline:
+    kill_pid(pgid, signal.SIGTERM, group=True)
+    def gone():
         try:
             os.killpg(pgid, 0)
+            return False
         except ProcessLookupError:
-            return
-        time.sleep(0.1)
-    kill_group(pgid, signal.SIGKILL)
+            return True
+    if not wait_until(gone, GRACE):
+        kill_pid(pgid, signal.SIGKILL, group=True)
 
 
 def run_local(command, root, outs, lift_deny=False):
     started = time.monotonic()
     slots = host_slots()
     try:
-        slot, slot_fd = acquire_any([os.path.join(LOCK_DIR, f"slot-{n}.lock") for n in range(1, slots + 1)])
+        slot, slot_fd = acquire_slot(slots)
     except OSError as err:
         say(f"can't open slot lock in {LOCK_DIR}: {err}")
         return FAILED
@@ -326,20 +332,43 @@ def failed(message):
     return FAILED
 
 
+def write_stdin(proc, data):
+    with contextlib.suppress(BrokenPipeError, ValueError):
+        proc.stdin.write(data)
+        proc.stdin.flush()
+
+
 def close_stdin(proc):
-    try:
+    with contextlib.suppress(OSError):
         proc.stdin.close()
-    except OSError:
-        pass
 
 
 def run_rsync(argv, capture=False):
-    """Run rsync in its own process group; on signal, TERM/KILL and reap it before returning."""
+    """Run rsync in heavy's process group so group SIGKILL kills it too; on signal, reap it + children."""
     kw = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True} if capture else {}
-    proc = subprocess.Popen(argv, start_new_session=True, **kw)
-    threading.Thread(target=stop_local, args=(proc,), daemon=True).start()
+    proc = subprocess.Popen(argv, **kw)
+    kids = []
+
+    def stopper():
+        while proc.poll() is None and stop_signal is None:
+            time.sleep(0.1)
+        if proc.poll() is not None:
+            return
+        kids[:] = child_pids(proc.pid)
+        for pid in (proc.pid, *kids):
+            kill_pid(pid, signal.SIGTERM)
+        if not wait_until(lambda: proc.poll() is not None, GRACE):
+            for pid in (proc.pid, *kids):
+                kill_pid(pid, signal.SIGKILL)
+
+    t = threading.Thread(target=stopper, daemon=True)
+    t.start()
     out, err = proc.communicate() if capture else (proc.wait(), None)
-    drain_group(proc.pid)
+    if stop_signal is not None:
+        t.join(timeout=GRACE + 1)
+        if not wait_until(lambda: not any(pid_alive(p) for p in kids), GRACE):
+            for pid in kids:
+                kill_pid(pid, signal.SIGKILL)
     return proc.returncode, out, err
 
 
@@ -380,57 +409,47 @@ def run_remote(command, root, outs, peer, target, ssh_args):
         "stage_gitdir": shlex.quote(stage_gitdir), "command": shlex.quote(command),
     })
     rsh = shlex.join(ssh_args)
-    # Own session keeps Ctrl-C or group kill (agent-wait) off ssh: heavy closes stdin and still hears exit.
+    # Own session keeps Ctrl-C or group kill off ssh so heavy closes stdin and still hears remote exit.
     ssh = subprocess.Popen([*ssh_args, target, "bash", "-l", "-s"],
                            stdin=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
     events, ready, done, go_at = {}, threading.Event(), threading.Event(), [started]
     pump = threading.Thread(target=pump_stderr, args=(ssh.stderr, events, ready, done, go_at, peer), daemon=True)
     pump.start()
+    err_msg = None
     try:
-        try:
-            ssh.stdin.write(script.encode())
-            ssh.stdin.flush()
-        except (BrokenPipeError, ValueError):
-            pass
+        write_stdin(ssh, script.encode())
         while not ready.wait(0.2):
             if stop_signal is not None:
                 close_stdin(ssh)
                 break
         if "ready" not in events:
-            close_stdin(ssh)
-            ssh.wait()
-            pump.join()
             if "denied" in events:
                 return DENIED
             if "lock-failed" in events:
                 say(f"can't open lock on {peer}: {events['lock-failed'][0]}")
                 return FAILED
-            return failed(f"preparing staging dir on {peer} failed (ssh exited {ssh.returncode})")
+            if stop_signal is not None:
+                return 128 + stop_signal
+            err_msg = f"preparing staging dir on {peer} failed"
+            return FAILED
         queued = events["ready"][1] - started
         sync_started = time.monotonic()
-        # Keep ssh stdin open (holding the peer's fd 8 lock) until rsync is completely reaped.
-        if mirror:
-            rc, _, _ = run_rsync(["rsync", "-a", "-s", "-e", rsh, "--delete", f"{mirror}/", f"{target}:{stage_git}/"])
-            if rc:
-                return failed(f"mirroring {mirror} failed (rsync {rc})")
-        if stop_signal is not None:
-            return 128 + stop_signal
         ignore = os.path.join(root, ".heavyignore")
-        rc, _, _ = run_rsync(["rsync", "-a", "-s", "-e", rsh, "--delete",
-                              *([f"--exclude-from={ignore}"] if os.path.isfile(ignore) else []),
-                              f"{root}/", f"{target}:{stage_tree}/"])
-        if rc:
-            return failed(f"copying {root} failed (rsync {rc})")
-        if stop_signal is not None:
-            return 128 + stop_signal
+        uploads = ([(f"mirroring {mirror}", [], f"{mirror}/", f"{target}:{stage_git}/")] if mirror else []) + [
+            (f"copying {root}", [f"--exclude-from={ignore}"] if os.path.isfile(ignore) else [],
+             f"{root}/", f"{target}:{stage_tree}/"),
+        ]
+        # Keep ssh stdin open (holding peer's fd 8 lock) until each rsync is reaped.
+        for label, extra, src, dst in uploads:
+            rc, _, _ = run_rsync(["rsync", "-a", "-s", "-e", rsh, "--delete", *extra, src, dst])
+            if rc:
+                return failed(f"{label} failed (rsync {rc})")
+            if stop_signal is not None:
+                return 128 + stop_signal
         sync_time = time.monotonic() - sync_started
         go_at[0] = time.monotonic()
         threading.Thread(target=stop_remote, args=(ssh, done), daemon=True).start()
-        try:
-            ssh.stdin.write(b"go\n")
-            ssh.stdin.flush()
-        except (BrokenPipeError, ValueError):
-            pass
+        write_stdin(ssh, b"go\n")
         done.wait()
         if "denied" in events:
             return DENIED
@@ -446,10 +465,7 @@ def run_remote(command, root, outs, peer, target, ssh_args):
             copy_back(out, stage_tree, real_root, peer, target, rsh)
         copy_time = time.monotonic() - copy_started
         if "exit" not in events:
-            close_stdin(ssh)
-            ssh.wait()
-            pump.join()
-            say(f"lost the job on {peer} (ssh exited {ssh.returncode})")
+            err_msg = f"lost the job on {peer}"
             return 128 + stop_signal if stop_signal is not None else FAILED
         rc = 128 + stop_signal if stop_signal is not None else int(events["exit"][0])
         say(f"done on {peer}: queue {queued + slot_at - go_at[0]:.1f}s, sync {sync_time:.1f}s, "
@@ -460,16 +476,8 @@ def run_remote(command, root, outs, peer, target, ssh_args):
         close_stdin(ssh)
         ssh.wait()
         pump.join()
-
-
-def write_stderr(data):
-    if not data:
-        return
-    try:
-        sys.stderr.buffer.write(data)
-        sys.stderr.buffer.flush()
-    except OSError:
-        pass
+        if err_msg and stop_signal is None:
+            say(f"{err_msg} (ssh exited {ssh.returncode})")
 
 
 def pump_stderr(stream, events, ready, done, go_at, peer):
@@ -507,14 +515,10 @@ def stop_remote(ssh, done):
     """On a signal during the remote job, close ssh stdin so the peer kills the job group."""
     while ssh.poll() is None and not done.is_set() and stop_signal is None:
         time.sleep(0.2)
-    if ssh.poll() is not None or done.is_set():
-        return
-    close_stdin(ssh)
-    deadline = time.monotonic() + GRACE + 60
-    while ssh.poll() is None and time.monotonic() < deadline:
-        time.sleep(0.2)
-    if ssh.poll() is None:
-        ssh.kill()
+    if ssh.poll() is None and not done.is_set():
+        close_stdin(ssh)
+        if not wait_until(lambda: ssh.poll() is not None, GRACE + 60, 0.2):
+            ssh.kill()
 
 
 def copy_back(out, stage_tree, real_root, peer, target, rsh):
@@ -545,10 +549,8 @@ def tailscale_peers():
         data = json.loads(res.stdout) if res.returncode == 0 else {}
     except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
         return []
-    if data.get("BackendState") != "Running":
-        return []
     self_uid = (data.get("Self") or {}).get("UserID")
-    if self_uid is None:
+    if data.get("BackendState") != "Running" or self_uid is None:
         return []
     suffix = (data.get("MagicDNSSuffix") or "").strip(".")
     peers = {}
@@ -569,16 +571,22 @@ def tailscale_peers():
     return [peers[h] for h in sorted(peers)]
 
 
+@contextlib.contextmanager
 def ssh_args_for(host, host_keys):
-    """Build ssh argv; pass Tailscale-attested sshHostKeys via GlobalKnownHostsFile when present."""
+    """Yield ssh argv, passing Tailscale-attested sshHostKeys via GlobalKnownHostsFile when present."""
     if not host_keys:
-        return list(SSH_ARGS), None
+        yield list(SSH_ARGS)
+        return
     tmp_dir = "/tmp" if any(c.isspace() for c in tempfile.gettempdir()) else None
     fd, path = tempfile.mkstemp(prefix="heavy-kh-", dir=tmp_dir)
-    with os.fdopen(fd, "w") as f:
-        for key in host_keys:
-            f.write(f"{host} {key}\n")
-    return [*SSH_ARGS, "-o", f"GlobalKnownHostsFile={path}"], path
+    try:
+        with os.fdopen(fd, "w") as f:
+            for key in host_keys:
+                f.write(f"{host} {key}\n")
+        yield [*SSH_ARGS, "-o", f"GlobalKnownHostsFile={path}"]
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(path)
 
 
 def probe_peer(target, ssh_args):
@@ -615,8 +623,7 @@ def main():
         for label, host, host_keys in tailscale_peers():
             if stop_signal is not None:
                 return 128 + stop_signal
-            ssh_args, kh_path = ssh_args_for(host, host_keys)
-            try:
+            with ssh_args_for(host, host_keys) as ssh_args:
                 target = f"{user}@{host}"
                 if not probe_peer(target, ssh_args):
                     continue
@@ -625,12 +632,6 @@ def main():
                     say(f"{label} now sets AGENT_HEAVY_JOBS=deny; skipping")
                     continue
                 return rc
-            finally:
-                if kh_path:
-                    try:
-                        os.unlink(kh_path)
-                    except OSError:
-                        pass
         if stop_signal is not None:
             return 128 + stop_signal
         say("no eligible peer answered; running here with AGENT_HEAVY_JOBS lifted")
