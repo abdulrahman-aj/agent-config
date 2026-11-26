@@ -166,6 +166,11 @@ class HeavyTest(unittest.TestCase):
         for skipped in ("peer-1", "peer-2", "peer-other-user", "peer-4"):
             self.assertFalse(stage_dir(self.peers_dir / f"{skipped}.{SUFFIX}", self.repo).exists())
 
+    def test_peer_login_env_cannot_switch_a_job_into_probe_mode(self):
+        self.write(".profile", "export mode=probe\n", root=self.remote_home)
+        self.assertEqual(self.run_heavy("touch ran-remote", remote=True), 0)
+        self.assertTrue((self.remote_tree / "ran-remote").exists())
+
     def test_deny_rechecked_at_job_start_moves_to_next_peer_or_falls_back(self):
         peer1, peer2 = self.make_peer("peer-1", deny_via="after-probe"), self.make_peer("peer-2")
         self.set_peers(("peer-1", True, "linux"), ("peer-2", True, "linux"))

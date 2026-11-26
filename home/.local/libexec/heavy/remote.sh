@@ -3,7 +3,8 @@
 # shellcheck disable=SC2154  # inputs below are prepended as assignments by heavy
 #
 # Expected shell variables (prepended by heavy as shlex-quoted assignments):
-#   mode          "probe" to exit 0/10 after the deny check; empty to run a job
+#   mode          "probe" to exit 0/10 after the deny check; "job" to run a job.
+#                 heavy always sets it, so a peer's exported $mode can't leak in.
 #   mark          per-run protocol prefix (without leading RS or trailing space)
 #   id            12-hex staging id under ~/.cache/heavy/work
 #   need_git      "1" for a linked worktree (stages common .git under .../git), else ""
@@ -109,7 +110,8 @@ fi
 slots=$(awk '/^MemTotal:/ {s = int($2 / 10485760); print (s < 1 ? 1 : s)}' /proc/meminfo 2>/dev/null)
 slots=${slots:-1}
 lock_dir=${lock_dir:-/tmp/heavy-$(id -u)}
-(umask 077; mkdir -p -- "$lock_dir") || fail lock-failed "$lock_dir"
+# shellcheck disable=SC2174  # 0700 on the lock dir only; parents keep the umask
+mkdir -m 700 -p -- "$lock_dir" || fail lock-failed "$lock_dir"
 while [ -z "${stopped:-}" ]; do
   for ((slot = 1; slot <= slots; slot++)); do
     # fd 9 holds the slot. Jobs get 8>&- 9>&- so daemons can't inherit either lock.

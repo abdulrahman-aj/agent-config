@@ -293,7 +293,7 @@ def run_remote(command, root, outs, peer, target, ssh_args):
         rel_gitdir = os.path.relpath(gitdir, common)
         stage_gitdir = stage_git if rel_gitdir == "." else f"{stage_git}/{rel_gitdir}"
     script = remote_script(
-        mark=MARK[1:-1].decode(), id=sid, need_git="1" if mirror else "",
+        mode="job", mark=MARK[1:-1].decode(), id=sid, need_git="1" if mirror else "",
         grace=str(GRACE), lock_dir=os.environ.get("HEAVY_LOCK_DIR", ""),
         stage_cwd=stage_cwd, stage_tree=stage_tree, stage_gitdir=stage_gitdir,
         command=command,
