@@ -149,6 +149,20 @@ class AgentWaitTest(unittest.TestCase):
         agent.wait(timeout=10)
         self.assertEqual(self.wait("--pid", str(pid), "--max-seconds", "2"), STILL_RUNNING)
 
+    @unittest.skipUnless(subprocess.run(["systemd-run", "--user", "--scope", "--quiet", "true"],
+                                        capture_output=True).returncode == 0
+                         if shutil.which("systemd-run") else False,
+                         "needs a systemd user manager")
+    def test_scoped_job_runs_with_a_log_name_that_starts_with_a_dash(self):
+        # The scoped relaunch once passed --log and its value as two words, so
+        # "-job.log" parsed as an option: --start succeeded, the job never ran.
+        result = subprocess.run([sys.executable, AGENT_WAIT, "--start", "--log=-job.log", "--", "true"],
+                                cwd=self.tmp.name, capture_output=True, text=True, timeout=30)
+        pid = int(result.stdout)
+        self.detached.append(pid)
+        log = os.path.join(self.tmp.name, "-job.log")
+        self.assertEqual(self.wait("--pid", str(pid), "--log", log), EXITED)
+
     def test_started_job_that_succeeds_returns_exited(self):
         pid = self.launch("sh", "-c", "echo started; sleep 2")
         self.assertEqual(self.wait("--pid", str(pid), "--log", self.log), EXITED)
