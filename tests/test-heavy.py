@@ -393,6 +393,59 @@ class HeavyTest(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.remote_tree, "retry-ran")))
         self.assertFalse(os.path.exists(os.path.join(self.remote_tree, "marker")))
 
+    def test_cancel_during_upload_reaps_rsync_before_releasing_staging_lock(self):
+        started = os.path.join(self.tmp.name, "upload-started")
+        reaped = os.path.join(self.tmp.name, "upload-reaped")
+        slow_ssh = os.path.join(self.tmp.name, "slow-upload-ssh")
+        with open(slow_ssh, "w") as f:
+            f.write(
+                f"#!/usr/bin/env bash\n"
+                f"if [[ \"$*\" == *\"rsync --server\"* ]] && [ ! -e {started} ]; then\n"
+                f"  trap '' USR1\n"
+                f"  trap 'sleep 0.5; touch {reaped}; exit 143' TERM\n"
+                f"  touch {started}\n"
+                f"  while :; do sleep 0.05; done\n"
+                f"fi\n"
+                f"exec {FAKE_SSH} \"$@\"\n"
+            )
+        os.chmod(slow_ssh, 0o755)
+        first = self.start("touch first-ran", remote=True, HEAVY_SSH=slow_ssh)
+        self.wait_for(started)
+        first.send_signal(signal.SIGTERM)
+        # Retry must not enter staging until first's rsync has exited and been reaped.
+        retry = self.start(f"test -e {reaped} && touch retry-ran", remote=True)
+        self.assertEqual(first.wait(timeout=30), 128 + signal.SIGTERM)
+        self.assertEqual(retry.wait(timeout=30), 0)
+        self.assertTrue(os.path.exists(reaped))
+        self.assertTrue(os.path.exists(os.path.join(self.remote_tree, "retry-ran")))
+        self.assertFalse(os.path.exists(os.path.join(self.remote_tree, "first-ran")))
+
+    def test_out_copy_back_holds_staging_lock_against_next_run(self):
+        started = os.path.join(self.tmp.name, "copyback-started")
+        release = os.path.join(self.tmp.name, "copyback-release")
+        slow_ssh = os.path.join(self.tmp.name, "slow-copyback-ssh")
+        with open(slow_ssh, "w") as f:
+            f.write(
+                f"#!/usr/bin/env bash\n"
+                f"if [[ \"$*\" == *\"--sender\"* ]]; then\n"
+                f"  touch {started}\n"
+                f"  while [ ! -e {release} ]; do sleep 0.05; done\n"
+                f"fi\n"
+                f"exec {FAKE_SSH} \"$@\"\n"
+            )
+        os.chmod(slow_ssh, 0o755)
+        first = self.start("echo first-bytes > artifact", "--out", "artifact", remote=True, HEAVY_SSH=slow_ssh)
+        self.wait_for(started)
+        second = self.start("echo second-bytes > artifact", remote=True)
+        time.sleep(1.0)
+        open(release, "w").close()
+        self.assertEqual(first.wait(timeout=30), 0)
+        self.assertEqual(second.wait(timeout=30), 0)
+        with open(os.path.join(self.repo, "artifact")) as f:
+            self.assertEqual(f.read(), "first-bytes\n")
+        with open(os.path.join(self.remote_tree, "artifact")) as f:
+            self.assertEqual(f.read(), "second-bytes\n")
+
 
 if __name__ == "__main__":
     unittest.main()

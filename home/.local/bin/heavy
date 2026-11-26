@@ -176,7 +176,10 @@ else
   fi
 fi
 kill -- "-$watcher" 2>/dev/null
+exec 9>&-
 mark exit "$rc"
+# Keep fd 8 (staging lock) held until the client finishes --out copy-back and closes stdin.
+cat >/dev/null
 exit "$rc"
 }
 """
@@ -323,6 +326,23 @@ def failed(message):
     return FAILED
 
 
+def close_stdin(proc):
+    try:
+        proc.stdin.close()
+    except OSError:
+        pass
+
+
+def run_rsync(argv, capture=False):
+    """Run rsync in its own process group; on signal, TERM/KILL and reap it before returning."""
+    kw = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True} if capture else {}
+    proc = subprocess.Popen(argv, start_new_session=True, **kw)
+    threading.Thread(target=stop_local, args=(proc,), daemon=True).start()
+    out, err = proc.communicate() if capture else (proc.wait(), None)
+    drain_group(proc.pid)
+    return proc.returncode, out, err
+
+
 def run_remote(command, root, outs, peer, target, ssh_args):
     started = time.monotonic()
     if root is None:
@@ -363,76 +383,96 @@ def run_remote(command, root, outs, peer, target, ssh_args):
     # Own session keeps Ctrl-C or group kill (agent-wait) off ssh: heavy closes stdin and still hears exit.
     ssh = subprocess.Popen([*ssh_args, target, "bash", "-l", "-s"],
                            stdin=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-    try:
-        ssh.stdin.write(script.encode())
-        ssh.stdin.flush()
-    except (BrokenPipeError, ValueError):
-        pass
-    events, ready, go_at = {}, threading.Event(), [started]
-    pump = threading.Thread(target=pump_stderr, args=(ssh.stderr, events, ready, go_at, peer), daemon=True)
+    events, ready, done, go_at = {}, threading.Event(), threading.Event(), [started]
+    pump = threading.Thread(target=pump_stderr, args=(ssh.stderr, events, ready, done, go_at, peer), daemon=True)
     pump.start()
-    threading.Thread(target=stop_remote, args=(ssh,), daemon=True).start()
-    ready.wait()
-    if "ready" not in events:
-        ssh.wait()
-        pump.join()
-        if "denied" in events:
-            return DENIED
-        if "lock-failed" in events:
-            say(f"can't open lock on {peer}: {events['lock-failed'][0]}")
-            return FAILED
-        return failed(f"preparing staging dir on {peer} failed (ssh exited {ssh.returncode})")
-    queued = events["ready"][1] - started
-    sync_started = time.monotonic()
-    sync_err = None
-    if mirror and (rc := subprocess.call(["rsync", "-a", "-s", "-e", rsh, "--delete", f"{mirror}/", f"{target}:{stage_git}/"])):
-        sync_err = f"mirroring {mirror} failed (rsync {rc})"
-    if not sync_err and stop_signal is None:
+    try:
+        try:
+            ssh.stdin.write(script.encode())
+            ssh.stdin.flush()
+        except (BrokenPipeError, ValueError):
+            pass
+        while not ready.wait(0.2):
+            if stop_signal is not None:
+                close_stdin(ssh)
+                break
+        if "ready" not in events:
+            close_stdin(ssh)
+            ssh.wait()
+            pump.join()
+            if "denied" in events:
+                return DENIED
+            if "lock-failed" in events:
+                say(f"can't open lock on {peer}: {events['lock-failed'][0]}")
+                return FAILED
+            return failed(f"preparing staging dir on {peer} failed (ssh exited {ssh.returncode})")
+        queued = events["ready"][1] - started
+        sync_started = time.monotonic()
+        # Keep ssh stdin open (holding the peer's fd 8 lock) until rsync is completely reaped.
+        if mirror:
+            rc, _, _ = run_rsync(["rsync", "-a", "-s", "-e", rsh, "--delete", f"{mirror}/", f"{target}:{stage_git}/"])
+            if rc:
+                return failed(f"mirroring {mirror} failed (rsync {rc})")
+        if stop_signal is not None:
+            return 128 + stop_signal
         ignore = os.path.join(root, ".heavyignore")
-        rc = subprocess.call(["rsync", "-a", "-s", "-e", rsh, "--delete",
+        rc, _, _ = run_rsync(["rsync", "-a", "-s", "-e", rsh, "--delete",
                               *([f"--exclude-from={ignore}"] if os.path.isfile(ignore) else []),
                               f"{root}/", f"{target}:{stage_tree}/"])
         if rc:
-            sync_err = f"copying {root} failed (rsync {rc})"
-    if sync_err or stop_signal is not None:
+            return failed(f"copying {root} failed (rsync {rc})")
+        if stop_signal is not None:
+            return 128 + stop_signal
+        sync_time = time.monotonic() - sync_started
+        go_at[0] = time.monotonic()
+        threading.Thread(target=stop_remote, args=(ssh, done), daemon=True).start()
         try:
-            ssh.stdin.close()
-        except OSError:
+            ssh.stdin.write(b"go\n")
+            ssh.stdin.flush()
+        except (BrokenPipeError, ValueError):
             pass
+        done.wait()
+        if "denied" in events:
+            return DENIED
+        if "lock-failed" in events:
+            say(f"can't open slot lock on {peer}: {events['lock-failed'][0]}")
+            return FAILED
+        slot_at = events.get("slot", (None, go_at[0]))[1]
+        done_at = events.get("job-done", (None, time.monotonic()))[1]
+        copy_started = time.monotonic()
+        for out in outs if "exit" in events else []:  # copy-back runs while peer still holds fd 8
+            if stop_signal is not None:
+                break
+            copy_back(out, stage_tree, real_root, peer, target, rsh)
+        copy_time = time.monotonic() - copy_started
+        if "exit" not in events:
+            close_stdin(ssh)
+            ssh.wait()
+            pump.join()
+            say(f"lost the job on {peer} (ssh exited {ssh.returncode})")
+            return 128 + stop_signal if stop_signal is not None else FAILED
+        rc = 128 + stop_signal if stop_signal is not None else int(events["exit"][0])
+        say(f"done on {peer}: queue {queued + slot_at - go_at[0]:.1f}s, sync {sync_time:.1f}s, "
+            f"job {done_at - slot_at:.1f}s, copy-back {copy_time:.1f}s, "
+            f"total {time.monotonic() - started:.1f}s, exit {rc}")
+        return rc
+    finally:
+        close_stdin(ssh)
         ssh.wait()
         pump.join()
-        return failed(sync_err) if sync_err else 128 + stop_signal
-    sync_time = time.monotonic() - sync_started
-    go_at[0] = time.monotonic()
+
+
+def write_stderr(data):
+    if not data:
+        return
     try:
-        ssh.stdin.write(b"go\n")
-        ssh.stdin.flush()
-    except (BrokenPipeError, ValueError):
+        sys.stderr.buffer.write(data)
+        sys.stderr.buffer.flush()
+    except OSError:
         pass
-    ssh.wait()
-    pump.join()
-    if "denied" in events:
-        return DENIED
-    if "lock-failed" in events:
-        say(f"can't open slot lock on {peer}: {events['lock-failed'][0]}")
-        return FAILED
-    slot_at = events.get("slot", (None, go_at[0]))[1]
-    done_at = events.get("job-done", (None, time.monotonic()))[1]
-    copy_started = time.monotonic()
-    for out in outs if "exit" in events else []:  # a lost connection has nothing to copy from
-        copy_back(out, stage_tree, real_root, peer, target, rsh)
-    copy_time = time.monotonic() - copy_started
-    if "exit" not in events:
-        say(f"lost the job on {peer} (ssh exited {ssh.returncode})")
-        return 128 + stop_signal if stop_signal is not None else FAILED
-    rc = 128 + stop_signal if stop_signal is not None else int(events["exit"][0])
-    say(f"done on {peer}: queue {queued + slot_at - go_at[0]:.1f}s, sync {sync_time:.1f}s, "
-        f"job {done_at - slot_at:.1f}s, copy-back {copy_time:.1f}s, "
-        f"total {time.monotonic() - started:.1f}s, exit {rc}")
-    return rc
 
 
-def pump_stderr(stream, events, ready, go_at, peer):
+def pump_stderr(stream, events, ready, done, go_at, peer):
     """Pass remote stderr through, minus protocol lines, which go to events."""
     fd, buf = stream.fileno(), b""
     try:
@@ -442,32 +482,34 @@ def pump_stderr(stream, events, ready, go_at, peer):
             for line in lines:
                 text, mark, proto = line.partition(MARK)
                 if text or not mark:
-                    sys.stderr.buffer.write(text + b"\n")
+                    write_stderr(text + b"\n")
                 if mark:
                     name, _, val = proto.decode(errors="replace").partition(" ")
                     events[name] = (val, time.monotonic())
                     if name == "ready":
                         ready.set()
+                    elif name == "exit":
+                        done.set()
                     elif name == "slot":
                         say(f"running on {peer}, slot {val}, after {time.monotonic() - go_at[0]:.1f}s waiting for it")
                     elif name == "cleanup-failed":
                         say(f".heavy-cleanup on {peer} exited {val}")
             held = buf.find(MARK[:1])
-            sys.stderr.buffer.write(buf if held < 0 else buf[:held])
+            write_stderr(buf if held < 0 else buf[:held])
             buf = b"" if held < 0 else buf[held:]
-            sys.stderr.buffer.flush()
-        sys.stderr.buffer.write(buf)
+        write_stderr(buf)
     finally:
         ready.set()
+        done.set()
 
 
-def stop_remote(ssh):
-    """On a signal, close ssh stdin so the peer kills the job group and runs .heavy-cleanup."""
-    while ssh.poll() is None and stop_signal is None:
+def stop_remote(ssh, done):
+    """On a signal during the remote job, close ssh stdin so the peer kills the job group."""
+    while ssh.poll() is None and not done.is_set() and stop_signal is None:
         time.sleep(0.2)
-    if ssh.poll() is not None:
+    if ssh.poll() is not None or done.is_set():
         return
-    ssh.stdin.close()
+    close_stdin(ssh)
     deadline = time.monotonic() + GRACE + 60
     while ssh.poll() is None and time.monotonic() < deadline:
         time.sleep(0.2)
@@ -484,14 +526,14 @@ def copy_back(out, stage_tree, real_root, peer, target, rsh):
     if path == ".git" or path.startswith(".git" + os.sep):
         say(f"--out {out}: refusing to overwrite .git, skipped")
         return
-    res = subprocess.run(["rsync", "-aRs", "--update", "--exclude=.git", "--out-format=%n", "-e", rsh,
-                          f"{target}:{stage_tree}/./{path}", f"{real_root}/"], capture_output=True, text=True)
-    if res.returncode == 23 and "No such file" in res.stderr:
+    rc, stdout, stderr = run_rsync(["rsync", "-aRs", "--update", "--exclude=.git", "--out-format=%n", "-e", rsh,
+                                    f"{target}:{stage_tree}/./{path}", f"{real_root}/"], capture=True)
+    if rc == 23 and "No such file" in stderr:
         say(f"--out {out}: not on {peer} after the job")
-    elif res.returncode:
-        say(f"--out {out}: rsync {res.returncode}: {res.stderr.strip()[-300:]}")
+    elif rc:
+        say(f"--out {out}: rsync {rc}: {stderr.strip()[-300:]}")
     else:
-        files = [line for line in res.stdout.splitlines() if not line.endswith("/")]
+        files = [line for line in stdout.splitlines() if not line.endswith("/")]
         say(f"--out {out}: copied back {len(files)} file(s)")
 
 
