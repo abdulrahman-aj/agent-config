@@ -15,12 +15,13 @@ below.
    it. Workers report unverified success, so read changes to checks and tests first,
    then prose line by line. Cheaper writers leave mannered lines, recaps, hedged claims,
    dropped explanations and confident wrong asides. Fix for the reader, not less work.
-2. **Nothing is true until verified.** Check software claims by running them and print
-   only real run output, trimmed never edited, including sentence fragments and
-   illustrative lines. Check other claims against primary sources at the named edition
-   or version, by working the derivation, or by performing the procedure, and check
-   definitions against the original author. A guarantee needs a reproduction or
-   counterexample that fails without the mechanism, in worked designs and labs.
+2. **Nothing is true until verified.** Check every claim against primary sources at the
+   named edition or version, and definitions against the original author. Run what the
+   book demonstrates in software and print only real run output, trimmed never edited,
+   including sentence fragments and illustrative lines; work each derivation; perform
+   each procedure. One implementation's behavior is not the standard's. A guarantee
+   needs a reproduction or counterexample that fails without the mechanism, in worked
+   designs and labs.
 3. **Strong models gate, cheaper ones filter.** Cheap fact-checkers missed must-fix
    errors in new prose every round. A strong reviewer checks risky designs before you
    build them and gates every new section and guarantee. For judgment work such as
@@ -141,8 +142,10 @@ below.
 - Before release, run a cross-chapter contradiction sweep over thresholds, ratings,
   glossary definitions, cross-reference targets and universal claims.
 - When the book prints commands or code, replay every printed command mechanically
-  against its printed output and exit status, and before release verify the book from a
-  fresh clone and fresh state through its printed setup.
+  against its printed output and exit status.
+- Before release, follow every printed setup procedure from the reader's starting state,
+  with nothing already installed or configured, and from a fresh clone where a
+  repository is part of the setup.
 - The book is done when every range is reviewed, no supported blocker or major finding
   remains, and the blind read has no "must fix".
 
