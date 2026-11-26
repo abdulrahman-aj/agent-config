@@ -61,6 +61,9 @@ Before drafting, since anything added later costs a pass over every chapter:
 - Name what this book teaches that existing material doesn't; an outline that fits an
   older book has missed the point. A book that replaces a source audits the source's
   ideas section by section (covered, thin, out of scope), again after a restructure.
+  Covering the source is the floor, not the frame: chapters open with the reader's
+  problem and cite the source only where its words carry the argument. Chapters built
+  on the source's names read as commentary on it (one cited its author 32 times).
 - Transferable lessons state the principle before the lab and show a second stack where
   it behaves differently. Admit a tool only for a decision existing material can't show;
   losers go on a "what this book leaves out" page with a checked source.
@@ -81,9 +84,17 @@ Before drafting, since anything added later costs a pass over every chapter:
   whether a chapter goal needs it; after moving it, diff the guards left in the book
   against the original (a trim once dropped two) and reread every later sentence that
   relied on it.
+- Point to one official, free place to learn a tool when printed code needs it, the
+  book tells the reader to adopt it, or a position recommends it without teaching it.
+  Print the URL in full and check the pointer's claim against that page: a quickstart
+  once used a different database than the pointer promised.
 - Build one sample chapter end to end and review it with the user before the rest.
 
-Run `unslop` over every new passage before committing it.
+Run `unslop` over every new passage before committing it. Then reread every new table
+cell, caption, diagram label and shortened sentence for every/any/only/always, a single
+outcome where the real one depends on a race or a commit, and one tool's behavior stated
+as the standard's. Summaries drop the conditions that made a claim true; a strong gate
+failed three content PRs in a row on these after cheap reviewers passed them.
 
 ## Briefs
 
@@ -138,6 +149,9 @@ These went wrong when a brief didn't say otherwise:
   rebase the others and rerun: shared build targets and fixtures break.
 - Before a release, verify from a fresh clone and fresh state through the book's
   printed setup, companion labs included; leftover state hid a broken step.
+- When a section claims a fix works, make the fix runnable, with trap cases that a
+  plausible wrong fix fails: prose walkthroughs of fixes were where gates kept finding
+  errors.
 - Don't print a short implementation as the real thing when real ones are large and
   subtle; print the idea, not the plumbing, list what to demand of a library, and point
   to a maintained one.
@@ -167,11 +181,18 @@ subagents can't write files. Ask cheap goal readers to quote the passage that sh
 have taught what they call missing, after searching the book for it: three in four such
 claims were answered a page earlier.
 
+For sweeps that must catch every instance (every stale cross-reference, every claim that
+holds on one engine only), cheap readers only propose candidates. Each candidate cites
+file and line with a quote that a script checks, recall is measured on known hits hidden
+from the sweepers, and a strong model verifies what survives.
+
 After every batch, check every code fence is closed, build, and read each changed
 section with its neighbors; before each blind read, read the whole book. Check that the
 running example keeps its names, each case is told once and each idea explained once
 under one name, framings match the plan's scope, exercises follow their rules, and the
-reader can do each chapter goal from the text.
+reader can do each chapter goal from the text. Every callback comes after the idea's
+first meeting (check the map mechanically: four callbacks once preceded their naming
+chapter) and carries a reason; past about four in one chapter they read as slogans.
 
 Keep each worker's full task ID in `book/out/reviews/task-ids.md`: truncated IDs left
 two finished reviews unread for hours.
