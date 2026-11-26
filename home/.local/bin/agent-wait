@@ -6,8 +6,8 @@ in a new session and, when a systemd user manager answers, in its own named
 transient scope so it survives the caller's shell and session restarts. It
 prints the resolved absolute log path and stores the job's identity and exit
 status in LOG.job. `wait` blocks up to --max-seconds and reports a stall when
-LOG stops changing for --stall-minutes. `stop` terminates the whole job. Linux
-only.
+LOG stops changing for --stall-minutes. `stop` terminates the job's scope, or
+its process group without systemd. Linux only.
 """
 
 import argparse
@@ -41,7 +41,8 @@ exit codes:
   (1 is reserved for crashes)
 
 Limits: stall age carries across calls only through the log's mtime, so a
-future mtime restarts the count, and a log deleted between calls gives 2.
+future mtime restarts the count, a log deleted between calls gives 2, and
+deleting both LOG and LOG.job while a job runs lets a new start reuse the path.
 """
 
 
@@ -215,7 +216,10 @@ def supervise(log, unit, command):
         write_json(job_path(log), record)
         rc = subprocess.call(command)
         record["exit"] = 128 - rc if rc < 0 else rc
-        write_json(job_path(log), record)
+        # Don't clobber a newer job's record if the old log/record were deleted.
+        cur = read_job(log)
+        if isinstance(cur, dict) and cur["pid"] == record["pid"] and cur["start_time"] == record["start_time"]:
+            write_json(job_path(log), record)
     except OSError as error:
         # Unknown command or unwritable sidecar: exit stays None, which wait
         # reports as unknown (4), never as success.
@@ -257,6 +261,8 @@ def start(log, command):
     if pid:
         # Wait until supervise writes LOG.job (which for scoped jobs happens
         # after systemd-run has moved the process into its own scope).
+        child_exited = [False]
+
         def child_ready():
             job = read_job(log)
             if isinstance(job, dict) and job["pid"] == pid:
@@ -265,16 +271,23 @@ def start(log, command):
                 done_pid, _ = os.waitpid(pid, os.WNOHANG)
             except ChildProcessError:
                 done_pid = pid
-            return done_pid == pid
+            if done_pid == pid:
+                child_exited[0] = True
+                return True
+            return False
 
         wait_until(child_ready, 10, step=0.01)
         job = read_job(log)
         os.close(log_fd)
         if not (isinstance(job, dict) and job["pid"] == pid):
-            try:
-                os.unlink(job_path(log))
-            except OSError:
-                pass
+            if child_exited[0]:
+                try:
+                    with open(job_path(log)) as f:
+                        stub = json.load(f)
+                    if stub == {"starting": os.getpid()}:
+                        os.unlink(job_path(log))
+                except (OSError, ValueError):
+                    pass
             return err(f"supervisor failed to start; see {log}", FAILED)
         print(log)
         return EXITED
@@ -367,10 +380,14 @@ def stop(log):
     same_boot = job["boot_id"] == boot_id()
     pid, st = job["pid"], job["start_time"]
     unit = job["unit"] if valid_unit(job) else ""
-    pid_alive = same_boot and proc_start_time(pid) == st
+    info = proc_stat(pid) if same_boot else None
+    pid_alive = info is not None and info[0] not in ("Z", "X") and info[2] == st
+    zombie_pgrp = info is not None and info[0] in ("Z", "X") and info[2] == st and pgrp_has_live(pid)
     scope_alive = same_boot and bool(unit) and unit_active(unit)
 
-    if not pid_alive and not scope_alive:
+    if not pid_alive and not zombie_pgrp and not scope_alive:
+        if same_boot and not unit and info is None and job["exit"] is None and pgrp_has_live(pid):
+            return err(f"supervisor gone, but process group {pid} still has live processes for {log}", FAILED)
         detail = f"exit {job['exit']}" if job["exit"] is not None else "status unknown"
         print(f"agent-wait: {log} already exited ({detail})")
         return EXITED
@@ -435,7 +452,7 @@ def main(argv=None):
     p_wait.add_argument("--max-seconds", type=duration, default=540.0,
                         help="return 124 after this long if the job still runs (default 540)")
 
-    p_stop = sub.add_parser("stop", help="stop a started job and all its descendants")
+    p_stop = sub.add_parser("stop", help="stop a started job (its scope, or its process group without systemd)")
     p_stop.add_argument("log", help="the job's log path")
 
     # Split `start LOG -- CMD...` before argparse so misplaced flags before `--`

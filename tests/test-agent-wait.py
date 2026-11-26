@@ -185,17 +185,47 @@ class AgentWaitTest(unittest.TestCase):
         self.assertEqual(self.run_aw("wait", log).returncode, JOB_FAILED)
 
     def test_stop_fallback_without_systemd_kills_process_group(self):
-        env = dict(os.environ, PATH="/usr/bin:/bin")
-        # Force fallback by hiding systemd-run via an empty PATH dir with only python/sh?
-        # Simpler: set DBUS_SESSION_BUS_ADDRESS to a bogus socket so systemd-run --user fails.
-        env["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/nonexistent"
-        env["XDG_RUNTIME_DIR"] = self.tmp.name
+        env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent",
+                   XDG_RUNTIME_DIR=self.tmp.name)
         log = self.start_job("sleep", "60", env=env)
         job = self.read_job(log)
         self.assertEqual(job["unit"], "")
         self.assertEqual(self.run_aw("stop", log, env=env).returncode, EXITED)
         self.wait_until_gone(job["pid"])
         self.assertEqual(self.run_aw("wait", log, env=env).returncode, JOB_FAILED)
+
+    def test_stop_fallback_after_killed_supervisor_does_not_claim_exited_while_worker_lives(self):
+        env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent",
+                   XDG_RUNTIME_DIR=self.tmp.name)
+        log = self.start_job("sh", "-c", "sleep 60", env=env)
+        pid = self.read_job(log)["pid"]
+        try:
+            os.kill(pid, signal.SIGKILL)
+            deadline = time.monotonic() + 10
+            while os.path.exists(f"/proc/{pid}") and time.monotonic() < deadline:
+                time.sleep(0.05)
+            res = self.run_aw("stop", log, env=env)
+            if res.returncode == EXITED:
+                # If the supervisor stayed a zombie, stop verified its identity and killed the group.
+                with self.assertRaises(ProcessLookupError):
+                    os.killpg(pid, 0)
+            else:
+                self.assertEqual(res.returncode, JOB_FAILED)
+        finally:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    def test_old_supervisor_on_deleted_files_does_not_clobber_new_job_record(self):
+        log = self.start_job("sh", "-c", "sleep 2")
+        os.unlink(log)
+        os.unlink(log + ".job")
+        log2 = self.start_job("sleep", "60", log=log)
+        pid2 = self.read_job(log2)["pid"]
+        time.sleep(3)
+        self.assertEqual(self.read_job(log2)["pid"], pid2)
+        self.assertEqual(self.run_aw("wait", log2, "--max-seconds", "1").returncode, STILL_RUNNING)
 
     def test_stop_on_already_ended_job_returns_exited(self):
         log = self.start_job("true")
