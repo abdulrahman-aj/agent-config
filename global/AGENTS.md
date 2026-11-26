@@ -38,9 +38,9 @@ If no agent started you and you delegate:
 * Load `request-review` before briefing a reviewer or acting on its findings. Tell an implementer to load `request-review` and get up to two low-cost reviews before returning.
 * **In T3:**
   * Send follow-ups and re-checks to the child that did the work (`t3_thread_send`), not a new `delegate_task`, so it keeps its context. This overrides T3's own rule.
-  * Never start a replacement for a child that can still resume. After a quota failure that reports a reset time, T3 may resume the child itself, so check `task_status` and `t3_thread_list` a few minutes after the reset. If a run is active, wait on it. Send a resume only if the latest run is still `failed`.
-  * Use `mode: "auto"`. It steers a running turn, so a correction reaches a long gate now. Use `queue` for a separate next task.
-  * Clear stale queued sends with `t3_queue`, not `task_cancel`, which stops the child's current work even when the task ID you pass already finished.
+  * Never start a new child for work that a stalled or quota-failed child still holds; resume that child instead. After a quota failure that reports a reset time, T3 may resume the child itself, so check `task_status` and `t3_thread_list` a few minutes after the reset. If a run is active, wait on it. Send a resume only if no run has started since that failure.
+  * Use `mode: "auto"`. It steers a running turn, so a correction can reach a long gate before its turn ends; otherwise it starts or queues the message. Use `mode: "queue"` for a separate next task.
+  * Clear stale queued sends with `t3_queue`, not `task_cancel`, which stops the child's current work and its delegates even when the task ID you pass already finished.
 * While work remains, run independent work beside a blocked stream. End a turn only with a tracked child running, a picker question open or the task done.
 
 ## Delegated work
