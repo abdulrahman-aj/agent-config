@@ -16,5 +16,5 @@ description: Machine specs, SSH and VM rules for zenbook-dux and msi-dux. Load b
 * A repo can list rsync excludes in `.heavyignore`, and heavy runs `.heavy-cleanup` after each job, for example to stop a database the job started.
 * For long jobs, run `agent-wait --start --log <log> -- heavy -- <command>`. Killing the agent-wait group stops a remote job too.
 * Run remote commands with `tailscale ssh abdulrahman@msi-dux "bash -lc '<command>'"`. Its login shell is fish, so `bash -l` loads the login PATH (`~/.local/bin`, Nix).
-* For long jobs there, run `agent-wait` on `msi-dux` itself (see `agent-wait --help`).
+* For long jobs there, run `agent-wait start LOG -- CMD`, `agent-wait wait LOG`, and `agent-wait stop LOG` on `msi-dux` itself (see `agent-wait --help`).
 * `msi-dux` runs T3 as a headless background service. Its desktop app can't start while the service runs, so open its threads from the laptop.

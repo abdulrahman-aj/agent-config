@@ -30,4 +30,6 @@ Tell the reviewer to load `review`, and give it:
 Run cheap reviewers after a commit, or on the worker's checkout, so they see the exact diff.
 They are a filter, not a gate. Treat their findings as leads to verify before acting, and
 skip re-checks. They catch house-rule slips, sentences the change made false, deleted
-comments and edits beyond the task.
+comments and edits beyond the task. They miss overstated claims, such as tables, labels or
+summaries that go beyond their sources, and subtle bugs in code or tooling. A clean cheap
+review never replaces a strong gate.
