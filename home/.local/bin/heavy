@@ -18,6 +18,7 @@ import getpass
 import hashlib
 import json
 import os
+import re
 import secrets
 import shlex
 import signal
@@ -161,13 +162,14 @@ owned() {
   while [ "$up" != "${up%/*}" ]; do up=${up%/*}; listed "$up" && return 0; done
   return 1
 }
-dir=$1
+dir={dir}
+mirror_dir={mirror_dir}
 if { [ -e "$dir" ] || [ -L "$dir" ]; } && ! owned "$dir"; then
   echo "heavy: $dir already exists on $(uname -n) and isn't a heavy copy; not overwriting it" >&2
   exit 1
 fi
 mkdir -p -- "$dir" && { listed "$dir" || printf '%s\n' "$dir" >> "$list"; }
-if [ -n "${2:-}" ]; then mkdir -p -- "$2"; fi
+if [ -n "$mirror_dir" ]; then mkdir -p -- "$mirror_dir"; fi
 """
 
 stop_signal = None
@@ -331,6 +333,10 @@ def failed(message):
     return FAILED
 
 
+def render(template, values):
+    return re.sub(r"\{([a-z_]+)\}", lambda m: values.get(m.group(1), m.group(0)), template)
+
+
 def run_remote(command, root, outs, peer, target):
     started = time.monotonic()
     if root is None:
@@ -348,9 +354,9 @@ def run_remote(command, root, outs, peer, target):
     # with a real checkout of the same repo there.
     mirror = None if common.startswith(os.path.realpath(root) + os.sep) else common
     rel_root = home_relative(root, peer)
-    if rel_root is None:
+    rel_cwd = home_relative(os.getcwd(), peer) if rel_root is not None else None
+    if rel_root is None or rel_cwd is None:
         return FAILED
-    rel_cwd = home_relative(os.getcwd(), peer)  # inside root, so under home too
     mirror_rel = ""
     mirror_gitdir = ""
     if mirror:
@@ -369,9 +375,8 @@ def run_remote(command, root, outs, peer, target):
         return 128 + stop_signal
     queued = time.monotonic() - started
     sync_started = time.monotonic()
-    dirs = [rel_root, mirror_rel] if mirror_rel else [rel_root]
-    prepare = subprocess.run([*SSH_ARGS, target, "bash", "-s", "--", *map(shlex.quote, dirs)],
-                             input=PREPARE_SCRIPT.encode())
+    prepare_script = render(PREPARE_SCRIPT, {"dir": shlex.quote(rel_root), "mirror_dir": shlex.quote(mirror_rel)})
+    prepare = subprocess.run([*SSH_ARGS, target, "bash", "-s"], input=prepare_script.encode())
     if prepare.returncode:
         return failed(f"preparing the copy on {peer} failed (ssh exited {prepare.returncode})")
     if mirror:
@@ -387,13 +392,12 @@ def run_remote(command, root, outs, peer, target):
     if stop_signal is not None:
         return 128 + stop_signal
     sync_time = time.monotonic() - sync_started
-    script = REMOTE_SCRIPT
-    values = {"mark": MARK[1:-1].decode(), "grace": str(GRACE), "grace_tenths": str(GRACE * 10),
-              "lock_dir": shlex.quote(LOCK_DIR), "cwd": shlex.quote(rel_cwd),
-              "root": shlex.quote(rel_root), "mirror_gitdir": shlex.quote(mirror_gitdir),
-              "command": shlex.quote(command)}
-    for key, value in values.items():
-        script = script.replace("{" + key + "}", value)
+    script = render(REMOTE_SCRIPT, {
+        "mark": MARK[1:-1].decode(), "grace": str(GRACE), "grace_tenths": str(GRACE * 10),
+        "lock_dir": shlex.quote(LOCK_DIR), "cwd": shlex.quote(rel_cwd),
+        "root": shlex.quote(rel_root), "mirror_gitdir": shlex.quote(mirror_gitdir),
+        "command": shlex.quote(command),
+    })
     job_started = time.monotonic()
     # Its own session keeps a Ctrl-C or a group kill (agent-wait) off ssh: heavy then closes
     # ssh's stdin and still hears the remote exit. If heavy dies, the pipe closes all the same.

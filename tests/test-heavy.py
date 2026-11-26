@@ -178,8 +178,12 @@ class HeavyTest(unittest.TestCase):
     def test_denying_host_falls_back_locally_when_tailscale_has_no_peers(self):
         self.set_peers()
         check = 'test -z "${AGENT_HEAVY_JOBS:-}" && touch ran-fallback'
-        self.assertEqual(self.run_heavy(check, AGENT_HEAVY_JOBS="deny"), 0)
+        result = subprocess.run([HEAVY, "--", check], cwd=self.repo,
+                                env={**self.env, "AGENT_HEAVY_JOBS": "deny"},
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0)
         self.assertTrue(os.path.exists(os.path.join(self.repo, "ran-fallback")))
+        self.assertTrue(any(line.startswith("heavy:") for line in result.stderr.splitlines()))
 
     # Local path
 
