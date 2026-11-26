@@ -36,10 +36,12 @@ If no agent started you and you delegate:
 * Start implementers and strong gates yourself. Never brief a worker to start them.
 * Run at most two children of one expensive family (Opus, Neon, Sol) at once. Cheap models may fan out.
 * Load `request-review` before briefing a reviewer or acting on its findings. Tell an implementer to load `request-review` and get up to two low-cost reviews before returning.
-* In T3, override T3's rule: send follow-ups and re-checks to the child that did the work with `t3_thread_send`, not a new `delegate_task`. To reach a child mid-turn, try `mode: "steer"`, which works only while a provider turn is running. If steer is refused (for example while the child is starting or waiting on its own delegates), queue the message with `mode: "queue"` or wait for the turn to settle.
-* When a quota failure in T3 reports a reset time, T3 may resume the child itself once it passes. Wait until a few minutes past it, then resume or replace the child only if `task_status` and its thread (`t3_thread_list`) show no new run, the latest run still `failed` and nothing active.
-* In T3, clear stale queued sends with `t3_queue`, or they can run when the child resumes. Never use `task_cancel` for that: it stops the child's current work and its delegates, even when the task ID you pass already finished, so check `task_status` before any cancel.
-* In T3, check `t3_pending_request` on your children and answer their questions yourself.
+* **In T3:**
+  * Send follow-ups and re-checks to the child that did the work (`t3_thread_send`), not a new `delegate_task`, so it keeps its context. This overrides T3's own rule.
+  * Never start a new child for work that a stalled or quota-failed child still holds; resume that child instead.
+  * After a quota failure, T3 usually resumes the child itself once the reset passes, with a run that says "Continue where you left off". Resume it yourself (`t3_thread_send`) only if, a few minutes after the reset, `task_status` and `t3_thread_list` show no run started since the failure. Otherwise your message is a second "continue". If the failure reported no reset time, T3 won't resume the child, so resume it yourself once the quota is back.
+  * Use `mode: "auto"`. It steers a running turn, so a correction can reach a long gate before its turn ends; otherwise it starts or queues the message. Use `mode: "queue"` for a separate next task.
+  * Clear stale queued sends with `t3_queue`, not `task_cancel`, which stops the child's current work and its delegates even when the task ID you pass already finished.
 * While work remains, run independent work beside a blocked stream. End a turn only with a tracked child running, a picker question open or the task done.
 
 ## Delegated work
