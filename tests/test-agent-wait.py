@@ -299,6 +299,20 @@ class AgentWaitTest(unittest.TestCase):
         manual = self.run_aw("--supervise", self.log, "", "--", "true")
         self.assertEqual(manual.returncode, JOB_FAILED)
 
+    def test_closed_stdout_keeps_the_path_out_of_the_job_log(self):
+        res = subprocess.run([sys.executable, AGENT_WAIT, "start", self.log, "--", "echo", "ok"],
+                             preexec_fn=lambda: os.close(1), timeout=30)
+        self.assertEqual(res.returncode, EXITED)
+        self.assertEqual(self.run_aw("wait", self.log).returncode, EXITED)
+        with open(self.log) as f:
+            self.assertEqual(f.read(), "ok\n")
+
+    def test_start_accepts_a_non_utf8_log_name(self):
+        log = os.fsencode(self.tmp.name) + b"/log-\xff"
+        res = subprocess.run([sys.executable, AGENT_WAIT, "start", log, "--", "true"],
+                             capture_output=True, timeout=30)
+        self.assertEqual(res.returncode, EXITED, res.stderr)
+
     def test_start_with_full_stdout_commits_job_and_keeps_record(self):
         with open("/dev/full", "wb") as full:
             res = subprocess.run(

@@ -274,8 +274,11 @@ def start(log, command):
                 parent_sock.close()
             if committed:
                 # Committed: a stdout error (e.g. /dev/full) must not abort or unlink LOG.job.
-                with suppress(OSError):
-                    os.write(1, (log + "\n").encode())
+                # With stdout closed, open() may have put the log on fd 1; the path
+                # must not land in the job's own log. fsencode: Linux paths are bytes.
+                if log_fd != 1:
+                    with suppress(OSError):
+                        os.write(1, os.fsencode(log) + b"\n")
                 return EXITED
             # Abort: socket is closed so the child cannot commit even if it wakes later.
             def reaped():
