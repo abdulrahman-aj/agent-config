@@ -16,7 +16,6 @@
 * **Always verify.** Claim success only with evidence. Running the real thing counts; evidence isn't always a new test. Report what you ran and what it showed.
 * **Test what you fear.** Commit tests for logic that is likely or costly to break. Skip tests for declarative config, docs and trivial changes.
 * **Behavior over implementation.** Test observable behavior. Never assert file contents, exact strings or mocked command sequences.
-* **Persisted state.** When renaming or migrating persisted names or formats (schemas, files, config), test against state the previous version left, not only a fresh setup.
 
 # Workflow
 * **Dev environments.** Use the project's Nix dev shell, or add one if none exists.
