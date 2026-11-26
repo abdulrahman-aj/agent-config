@@ -62,8 +62,9 @@ Before drafting, since anything added later costs a pass over every chapter:
   older book has missed the point. A book that replaces a source audits the source's
   ideas section by section (covered, thin, out of scope), again after a restructure.
   Covering the source is the floor, not the frame: chapters open with the reader's
-  problem and cite the source only where its words carry the argument. Chapters built
-  on the source's names read as commentary on it (one cited its author 32 times).
+  problem, explain each idea in the book's voice with one citation, and quote the source
+  only where its words carry the argument. Chapters built on the source's names read as
+  commentary on it (one mentioned its author 32 times).
 - Transferable lessons state the principle before the lab and show a second stack where
   it behaves differently. Admit a tool only for a decision existing material can't show;
   losers go on a "what this book leaves out" page with a checked source.
@@ -184,7 +185,10 @@ claims were answered a page earlier.
 For sweeps that must catch every instance (every stale cross-reference, every claim that
 holds on one engine only), cheap readers only propose candidates. Each candidate cites
 file and line with a quote that a script checks, recall is measured on known hits hidden
-from the sweepers, and a strong model verifies what survives.
+from the sweepers, and a strong model verifies what survives. Below full recall, change
+the sweep (smaller windows, a second starting point such as the tool's own list of known
+pitfalls) and rerun it; one sweep found two of six known hits. Even full recall yields
+leads, not proof that nothing is left.
 
 After every batch, check every code fence is closed, build, and read each changed
 section with its neighbors; before each blind read, read the whole book. Check that the
