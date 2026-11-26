@@ -85,7 +85,7 @@ if is_denied; then mark denied; exit 10; fi
 id={stage_id}; need_git={need_git}; root="$HOME/.cache/heavy/work"
 case "$id" in ''|*[!0-9a-f]*) pfail ;; esac
 for p in "$HOME/.cache" "$HOME/.cache/heavy" "$root" "$root/$id" "$root/$id/tree" \
-         "$root/$id/lock" ${need_git:+"$root/$id/git"}; do
+         "$root/$id/lock" "$root/$id/upload.lock" "$root/$id/run" ${need_git:+"$root/$id/git"}; do
   [ -L "$p" ] && pfail "refusing symlink in staging path: $p"
 done
 mkdir -p -- "$root/$id/tree" || pfail
@@ -103,8 +103,17 @@ while ! flock -n 8; do
   read -r -t 0.5 _
   [ $? -lt 128 ] && exit 143
 done
+printf '%s\n' {mark} > "$root/$id/run" || pfail
+# Drain any surviving rsync receiver from a killed prior run before accepting uploads.
+exec 7>"$root/$id/upload.lock" || { rm -f "$root/$id/run"; mark lock-failed "$root/$id/upload.lock"; exit 255; }
+while ! flock -n 7; do
+  read -r -t 0.5 _
+  [ $? -lt 128 ] && { rm -f "$root/$id/run"; exit 143; }
+done
+exec 7>&-
 mark ready
-read -r go || exit 143
+read -r go || { rm -f "$root/$id/run"; exit 143; }
+rm -f "$root/$id/run"
 [ "$go" = go ] || exit 143
 stop() {
   stopped=1
@@ -173,8 +182,7 @@ stop_signal = None
 def write_stderr(data):
     if data:
         with contextlib.suppress(OSError):
-            sys.stderr.buffer.write(data)
-            sys.stderr.buffer.flush()
+            os.write(2, data)
 
 
 def say(message):
@@ -439,9 +447,16 @@ def run_remote(command, root, outs, peer, target, ssh_args):
             (f"copying {root}", [f"--exclude-from={ignore}"] if os.path.isfile(ignore) else [],
              f"{root}/", f"{target}:{stage_tree}/"),
         ]
+        # Hold peer upload.lock and verify this run's token inside the receiver so a surviving
+        # rsync from a SIGKILLed client can never overwrite a later run's staging files.
+        mark_str = MARK[1:-1].decode()
+        stage_dir = f"{STAGE_ROOT}/{sid}"
+        rsync_path = (f"flock {stage_dir}/upload.lock bash -c "
+                      f"'read -r g < {stage_dir}/run && [ \"$g\" = {mark_str} ] && exec rsync \"$@\"' _")
         # Keep ssh stdin open (holding peer's fd 8 lock) until each rsync is reaped.
         for label, extra, src, dst in uploads:
-            rc, _, _ = run_rsync(["rsync", "-a", "-s", "-e", rsh, "--delete", *extra, src, dst])
+            rc, _, _ = run_rsync(["rsync", "-a", "-s", "-e", rsh, f"--rsync-path={rsync_path}",
+                                  "--delete", *extra, src, dst])
             if rc:
                 return failed(f"{label} failed (rsync {rc})")
             if stop_signal is not None:
@@ -640,4 +655,8 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    rc = main()
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(OSError):
+            stream.flush()
+    os._exit(rc)

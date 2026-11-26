@@ -368,7 +368,7 @@ class HeavyTest(unittest.TestCase):
         started, reaped = self.root_tmp / "up-started", self.root_tmp / "up-reaped"
         slow_ssh = self.make_slow_ssh(
             "slow-up",
-            f'if [[ "$*" == *"rsync --server"* ]] && [ ! -e {started} ]; then '
+            f'if [[ "$*" == *"--server"* && "$*" != *"--sender"* ]] && [ ! -e {started} ]; then '
             f'trap "" USR1; trap "sleep 0.4; touch {reaped}; exit 143" TERM; '
             f'touch {started}; while :; do sleep 0.05; done; fi',
         )
@@ -386,7 +386,7 @@ class HeavyTest(unittest.TestCase):
         self.write("old-file", "old\n")
         slow_ssh = self.make_slow_ssh(
             "slow-gk",
-            f'if [[ "$*" == *"rsync --server"* ]]; then echo $$ > {pid_file}; touch {started}; '
+            f'if [[ "$*" == *"--server"* && "$*" != *"--sender"* ]]; then echo $$ > {pid_file}; touch {started}; '
             f'while [ ! -e {release} ]; do sleep 0.05; done; fi',
         )
         first = self.start("touch first-ran", remote=True, new_session=True, HEAVY_SSH=slow_ssh)
@@ -400,6 +400,59 @@ class HeavyTest(unittest.TestCase):
         release.touch()
         self.assertEqual(self.run_heavy("test -e retry-file && test ! -e old-file && touch retry-ran", remote=True), 0)
         self.assertTrue((self.remote_tree / "retry-file").exists() and (self.remote_tree / "retry-ran").exists())
+
+    def test_sigkill_heavy_pid_only_during_upload_does_not_clobber_retry(self):
+        sdir = stage_dir(self.remote_home, self.repo)
+        for hold_upload_lock in (False, True):
+            with self.subTest(hold_upload_lock=hold_upload_lock):
+                tag = "held" if hold_upload_lock else "late"
+                started, release = self.root_tmp / f"sk-{tag}-s", self.root_tmp / f"sk-{tag}-r"
+                pid_file = self.root_tmp / f"sk-{tag}-p"
+                self.write("old-file", "old\n")
+                (self.repo / "retry-file").unlink(missing_ok=True)
+                lock_cmd = f"exec 6>{sdir}/upload.lock; flock 6; " if hold_upload_lock else ""
+                slow_ssh = self.make_slow_ssh(
+                    f"slow-sk-{tag}",
+                    f'if [[ "$*" == *"--server"* && "$*" != *"--sender"* ]]; then '
+                    f'echo $$ > {pid_file}; {lock_cmd}touch {started}; '
+                    f'while [ ! -e {release} ]; do sleep 0.05; done; '
+                    f'exec 6>&-; fi',
+                )
+                first = self.start("touch first-ran", remote=True, HEAVY_SSH=slow_ssh)
+                ssh_pid = self.pid_in(pid_file)
+                self.wait_for(started)
+                first.kill()  # SIGKILL heavy's PID only: rsync + slow_ssh survive
+                first.wait(timeout=10)
+                self.assertTrue(alive(ssh_pid))
+                (self.repo / "old-file").unlink()
+                self.write("retry-file", "keep\n")
+                retry = self.start("test -e retry-file && test ! -e old-file && touch retry-ran", remote=True)
+                if hold_upload_lock:
+                    time.sleep(0.5)
+                    self.assertIsNone(retry.poll())  # waits for surviving receiver's upload.lock
+                    release.touch()
+                    self.assertEqual(retry.wait(timeout=30), 0)
+                else:
+                    self.assertEqual(retry.wait(timeout=30), 0)
+                    release.touch()  # surviving old rsync arrives late and must be rejected
+                deadline = time.monotonic() + 10
+                while alive(ssh_pid) and time.monotonic() < deadline:
+                    time.sleep(0.05)
+                self.assertTrue((self.remote_tree / "retry-file").exists())
+                self.assertFalse((self.remote_tree / "old-file").exists())
+
+    def test_closed_stderr_exits_0_not_120(self):
+        for remote in (False, True):
+            with self.subTest(remote=remote):
+                env = {**self.env}
+                if remote:
+                    env.update(AGENT_HEAVY_JOBS="deny", HEAVY_LOCK_DIR=str(self.root_tmp / "remote-locks"))
+                p = subprocess.Popen([HEAVY, "--", "sleep 0.2"], cwd=self.repo, env=env,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                self.procs.append(p)
+                p.stderr.readline()
+                p.stderr.close()
+                self.assertEqual(p.wait(timeout=30), 0)
 
     def test_out_copy_back_holds_staging_lock_against_next_run(self):
         started, release = self.root_tmp / "cb-started", self.root_tmp / "cb-release"
