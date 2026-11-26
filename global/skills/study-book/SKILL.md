@@ -7,7 +7,7 @@ description: Write a personal study book and typeset it as a PDF. Use when someo
 # Study book
 
 You know how to write, teach and review. Earlier books still went wrong in the ways
-below, each an instance of one of these principles.
+below.
 
 ## Principles
 
@@ -16,25 +16,22 @@ below, each an instance of one of these principles.
    report: read their changes to checks and tests first, and their prose line by line;
    cheaper writers leave mannered lines, recaps, hedged claims, dropped explanations and
    confident wrong asides. Choose each fix on what is best for the reader, never on what
-   is less work, and record the findings you decline.
+   is less work.
 2. **Nothing is true until it ran.** Print only output from a real run, trimmed but
    never edited, including fragments quoted in sentences and lines shown only to
    illustrate; labs print one line per outcome so nothing needs editing. Check claims
    against primary sources at the version the book names, and definitions against the
    original author. A guarantee needs a reproduction that fails without the mechanism,
    in worked designs as well as labs; a claim that concurrent writes converge also runs
-   concurrent writers on the source side. A finding needs a reproduction or a source.
-3. **Strong models gate, cheaper ones filter.** Orchestrate with the strongest model the
-   user allows (Opus or Sol). A cheaper orchestrator followed every rule and still
-   produced a generic outline and a sample chapter that missed its takeaway. Cheaper
-   fact-checkers passed sections in which Sol then found must-fix errors, every round,
-   clustered in the newest prose; so the strong model checks each risky design before it
-   is built, gates every new section and guarantee, and rechecks each fix round with its
-   own earlier findings, because fixes break things nearby. For judgment work (which
-   ideas recur, what to name them) run a strong pass beside the cheap one, not after it:
-   a cheap sweep anchors the answer.
-4. **Fix the class, not the instance.** When a review finds a problem, name its class,
-   search the book for siblings, and change the process that let it in.
+   concurrent writers on the source side.
+3. **Strong models gate, cheaper ones filter.** Cheap fact-checkers passed sections in
+   which a strong reviewer then found must-fix errors, every round, clustered in the
+   newest prose. So a strong reviewer checks each risky design before it is built and
+   gates every new section and guarantee. For judgment work (which ideas recur, what to
+   name them), run a strong pass beside the cheap one, not after it: a cheap sweep
+   anchors the answer.
+4. **Fix the class, not the instance.** When a review finds a problem, name its class
+   and search the book for siblings.
 5. **The scope decides coverage.** One scope statement lives in the plan and the front
    matter, which describes the book as it is and never promises unwritten chapters. The
    reader's background sets examples and depth, never which needed topics stay; the page
@@ -44,28 +41,30 @@ below, each an instance of one of these principles.
 6. **Content before form.** A table, parallel list or heading chosen because it looks
    rigorous gets filled to fit. Keep a column or item only if deleting it loses an
    answer to a reader's question.
-7. **A worker repeats whatever its brief allows.** Briefs carry the traps below.
-8. **Isolate workers and verify the way the reader will.**
 
 ## Scope and plan
 
 Load `grill-me`. Settle the reader's knowledge, goals in order, page and hour budget,
-real cases, where exercises run and what they must not touch, screen or print, and the
-models allowed per role. The reader usually doesn't know the field, so survey it
-yourself and propose a chapter-level table of contents with each chapter's takeaway,
-budget and what you leave out; the grill ends when they approve it. Record it all in a
-plan file that every brief points at.
+real cases, where exercises run and what they must not touch, screen or print, and which
+models the user allows for each role in this book. The reader usually doesn't know the
+field, so survey it yourself and propose a chapter-level table of contents with each
+chapter's takeaway, budget and what you leave out; the grill ends when they approve it.
+Record it all in a plan file that every brief points at.
 
-Give each book a private repository with `book/` and `lab/`, landing changes through
-PRs; the PDF ships as a release asset, and source material never enters the repository.
-If the book might be shared, describe the reader as a group and quote other books only
-briefly, inside your own explanation.
+Give each book a private repository with `book/` and `lab/`. The PDF ships as a release
+asset, and source material never enters the repository. If the book might be shared,
+describe the reader as a group and quote other books only briefly, inside your own
+explanation.
 
 Before drafting, since anything added later costs a pass over every chapter:
 
 - Name what this book teaches that existing material doesn't; an outline that fits an
   older book has missed the point. A book that replaces a source audits the source's
   ideas section by section (covered, thin, out of scope), again after a restructure.
+  Covering the source is the floor, not the frame: chapters open with the reader's
+  problem, explain each idea in the book's voice with one citation, and quote the source
+  only where its words carry the argument. Chapters built on the source's names read as
+  commentary on it (one mentioned its author 32 times).
 - Transferable lessons state the principle before the lab and show a second stack where
   it behaves differently. Admit a tool only for a decision existing material can't show;
   losers go on a "what this book leaves out" page with a checked source.
@@ -86,35 +85,40 @@ Before drafting, since anything added later costs a pass over every chapter:
   whether a chapter goal needs it; after moving it, diff the guards left in the book
   against the original (a trim once dropped two) and reread every later sentence that
   relied on it.
+- Point to one official, free place to learn a tool when printed code needs it, the
+  book tells the reader to adopt it, or a position recommends it without teaching it.
+  Print the URL in full and check the pointer's claim against that page: a quickstart
+  once used a different database than the pointer promised.
 - Build one sample chapter end to end and review it with the user before the rest.
 
-Run `unslop` over every new passage before committing it.
+Run `unslop` over every new passage before committing it. Then reread every new table
+cell, caption, diagram label and shortened sentence for every/any/only/always, a single
+outcome where the real one depends on a race or a commit, and one tool's behavior stated
+as the standard's. Summaries drop the conditions that made a claim true; a strong gate
+failed three content PRs in a row on these after cheap reviewers passed them.
 
 ## Briefs
 
-Write each brief yourself. These went wrong when a brief didn't say otherwise:
+These went wrong when a brief didn't say otherwise:
 
 - Edit notes in a spec ("replace X with three sharper questions") end up in the prose.
   Write the spec as content, and search new prose for sentences from the brief.
 - A candidate named in a ranking brief, even as an example, wins. Give criteria only.
 - Parallel workers place sections where their brief suits. Name each section's
   neighbors.
-- Workers don't know the user's style rules: no em dashes, no other languages embedded
-  in shell scripts, they/them, no filler or recaps. List them in every brief.
-- Workers edit checks or tests to pass, add tests that assert printed transcripts,
-  delete a failure demonstration they couldn't replay, and fix heavily (a retry loop
-  where one atomic statement did). Forbid the first three, have a hard demonstration
-  replay or be reported, and ask for the smallest correct fix, checked for the same bug
-  in a new form.
+- Prose workers skip the user's style rules. Tell each to load `unslop`, use they/them
+  and write no recaps.
+- Workers edit checks or tests to pass, delete a failure demonstration they couldn't
+  replay, and fix heavily (a retry loop where one atomic statement did). Forbid the
+  first two, have a hard demonstration replay or be reported, and ask for the smallest
+  correct fix, checked for the same bug in a new form.
 - Narrowed claims get spliced in without rereading. Require a reread of the paragraph
   and its neighbors.
 - A provider's safety filter blocks security labs, and workers quietly drop them first.
   Name them neutrally, avoid trigger words, and route them to a model that accepts them,
   in a fresh context.
-- Cheaper workers end their turn while builds run. Tell them to wait; verify anyway.
-- A whole-book review doesn't fit one turn: split it into page ranges at a pinned
-  revision, ask for ranges not covered, and continue in one thread until all are done.
-
+- A whole-book review doesn't fit one turn. Split it into page ranges at a pinned
+  revision and ask for the ranges not covered.
 
 ## Isolation and verification
 
@@ -129,8 +133,7 @@ Write each brief yourself. These went wrong when a brief didn't say otherwise:
   subprocesses. Run the whole suite from fresh state after each batch.
 - `make verify` replays every printed command, compares output and exit status, and
   saves the raw output of each mismatch. Replay through `make` with `MAKELEVEL` and
-  `MAKEFLAGS` stripped, or nested make output looks like a flake. Root-cause every
-  flake.
+  `MAKEFLAGS` stripped, or nested make output looks like a flake.
 - Concurrency labs wait on observable state, never on sleeps or thread liveness, and
   force each interleaving deterministically, driving both sides from one thread. Tests
   call the lab's real function, and a negative control reverts only the mechanism and
@@ -147,18 +150,24 @@ Write each brief yourself. These went wrong when a brief didn't say otherwise:
   rebase the others and rerun: shared build targets and fixtures break.
 - Before a release, verify from a fresh clone and fresh state through the book's
   printed setup, companion labs included; leftover state hid a broken step.
+- When a section claims a fix works, make the fix runnable, with trap cases that a
+  plausible wrong fix fails: prose walkthroughs of fixes were where gates kept finding
+  errors.
 - Don't print a short implementation as the real thing when real ones are large and
   subtle; print the idea, not the plumbing, list what to demand of a library, and point
   to a maintained one.
 
 ## Review and flow
 
-Review three ways: a different family fact-checks each chapter and fix diff; the strong
-model gates as in principle 3; a blind reader from another family reads the frozen PDF
-after each major revision, and finds what informed readers miss (an unannounced switch
-of the running example, an exercise before its rules). The book is done when every range
-is reviewed, no supported blocker or major finding remains, and the blind read has no
-"must fix".
+A different family fact-checks each chapter and fix diff, and every finding comes with a
+reproduction or a source. Besides that and the strong gate of principle 3, a blind
+reader from another family reads the frozen PDF after each major revision. It finds what
+informed readers miss: an unannounced switch of the running example, an exercise before
+its rules. The book is done when every range is reviewed, no supported blocker or major
+finding remains, and the blind read has no "must fix".
+
+Reviews check that the book is right, not that it teaches. To test teaching, give a
+reader a checkable task for the top goal and revise where they get stuck.
 
 Reviewers optimize what they are asked to check, so correctness rounds pull a book
 toward a spec. When a reviewer finds a gap in a worked example, narrow the claim before
@@ -167,24 +176,30 @@ additions, re-cut the scope instead of fixing again.
 
 Compare two versions blind: random labels, no description of the change, randomized
 order, ties allowed. A primed comparison once returned a unanimous verdict that proved
-nothing. For book-wide defects, add one fresh-context Opus reader: it caught two that
-twelve cheap readers missed. Opus subagents can't write files, so ask for the report in
-the reply. Ask cheap goal readers to quote the passage that should have taught what they
-call missing, after searching the book for it: three in four such claims were answered a
-page earlier.
+nothing. For book-wide defects, add one fresh-context strong reader: an Opus reader
+caught two that twelve cheap readers missed. Ask for its report in the reply, since some
+subagents can't write files. Ask cheap goal readers to quote the passage that should
+have taught what they call missing, after searching the book for it: three in four such
+claims were answered a page earlier.
+
+For sweeps that must catch every instance (every stale cross-reference, every claim that
+holds on one engine only), cheap readers only propose candidates. Each candidate cites
+file and line with a quote that a script checks, recall is measured on known hits hidden
+from the sweepers, and a strong model verifies what survives. Below full recall, change
+the sweep (smaller windows, a second starting point such as the tool's own list of known
+pitfalls) and rerun it; one sweep found two of six known hits. Even full recall yields
+leads, not proof that nothing is left.
 
 After every batch, check every code fence is closed, build, and read each changed
 section with its neighbors; before each blind read, read the whole book. Check that the
 running example keeps its names, each case is told once and each idea explained once
 under one name, framings match the plan's scope, exercises follow their rules, and the
-reader can do each chapter goal from the text.
+reader can do each chapter goal from the text. Every callback comes after the idea's
+first meeting (check the map mechanically: four callbacks once preceded their naming
+chapter) and carries a reason; past about four in one chapter they read as slogans.
 
-Commit before starting a reviewer, since a reviewer reading a live branch sees
-half-applied fixes. Keep each worker's full task ID in `book/out/reviews/task-ids.md`:
-truncated IDs left two finished reviews unread for hours.
-
-If another agent started you, every turn you end wakes it: end one only for a real
-question or a finished stage, and block on your workers with the harness's wait.
+Keep each worker's full task ID in `book/out/reviews/task-ids.md`: truncated IDs left
+two finished reviews unread for hours.
 
 ## Typeset
 
@@ -212,9 +227,6 @@ squeezed table passed a 50 dpi contact sheet):
 ```bash
 nix shell nixpkgs#poppler-utils -c pdftoppm -r 80 -png book.pdf out/page
 ```
-
-Reviews check that the book is right, not that it teaches; to test teaching, give a
-reader a checkable task for the top goal and revise where they get stuck.
 
 Freeze each checkpoint PDF as `book/out/reviews/review-<commit>.pdf` (gitignored) and
 give the user a link. If others will build the book, copy `build.py`, `check.py` and
