@@ -27,6 +27,8 @@ $ mkdir scratch && cd scratch && git init -q -b main
 Read the files Git writes for a snapshot, then use its history of references to recover work.
 ]
 
+#group("Reading the repository")
+
 #chapter("Three kinds of object", label: <ch-objects>)[
 #takeaways[
   - read any commit, tree or file straight from Git's object store;

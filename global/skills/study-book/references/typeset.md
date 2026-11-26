@@ -7,9 +7,10 @@ release build.
 
 - Write `book.typ` against this skill's `template.typ`; its header lists the interface
   and `sample/book.typ` uses all of it.
-- Structure parts with `#part(title)[body]` and chapters with `#chapter(title)[body]`.
-  PDF bookmarks nest part, chapter and section; the book opens with a one-page brief
-  contents before the full contents, and each part opener lists its chapters at the foot.
+- Structure parts with `#part(title)[body]`, optional contents-only groups with
+  `#group(title)`, and chapters with `#chapter(title)[body]`. PDF bookmarks nest part,
+  chapter and section; the book opens with a brief contents before the full contents, and
+  each part opener lists its chapters at the foot.
 - Use `numbered: false, tag: "R1"` on unnumbered review or synthesis chapters so their
   questions number under the tag and their Answers start on a new page.
 - Label chapters with `label: <ch-topic>` and sections with `== Heading <sec-topic>`.

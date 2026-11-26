@@ -5,6 +5,7 @@
 // Interface (everything else in this file is styling and may change):
 //   #show: book.with(title:, subtitle:, reader:, snapshot:)     title page, brief and full contents
 //   #part(title)[body]                                          part opener with its chapter list
+//   #group(title)                                               a label in the full contents only
 //   #chapter(title, numbered: true, label: none,                opener on a new page; tag (e.g. "R1")
 //     tag: none, tag-label: "Review")[body]                     replaces the number on an unnumbered
 //                                                               chapter and breaks before Answers
@@ -55,11 +56,12 @@
 
 // A web address goes in a footnote, so the sentence names the resource and a reader of a
 // printed copy finds the address at the page foot. Mono and unhyphenated, because a hyphen
-// the typesetter adds is a typo once typed back in. Each slash is also a break point.
+// the typesetter adds is a typo once typed back in. Only the default https:// scheme is
+// omitted; host and path stay intact, and each slash is also a break point.
 // Several addresses stack under the first, so each starts at the same column.
 #let web(..urls) = {
   let items = urls.pos().map(u => {
-    let shown = u.trim("https://", at: start).trim("www.", at: start).trim("/", at: end)
+    let shown = u.trim("https://", at: start, repeat: false)
     link(u, text(font: mono, size: 7.6pt, hyphenate: false, shown.replace("/", "/\u{200B}")))
   })
   footnote(if items.len() == 1 { items.first() } else {
@@ -149,7 +151,8 @@
 #let running-head = context {
   let p = here().page()
   if is-opener(p) or is-quiet(p) { return }
-  let chapters = query(heading.where(level: chapter-level)).filter(h => h.location().page() <= p)
+  let chapters = query(heading.where(level: chapter-level)).filter(h =>
+    h.location().page() <= p and h.supplement != [Group])
   if chapters.len() == 0 { return }
   let chapter = chapters.last()
   set text(font: sans, size: 7.8pt, fill: soft)
@@ -287,9 +290,9 @@
   // (`@sec-x`) render as their title and page, so links survive reordering.
   show ref: it => {
     let el = it.element
-    if el != none and el.func() == heading and el.level == chapter-level and el.numbering != none and it.supplement == auto {
+    if el != none and el.func() == heading and el.supplement != [Group] and el.level == chapter-level and el.numbering != none and it.supplement == auto {
       link(el.location(), [chapter~#chapter-of(counter(heading).at(el.location()))])
-    } else if el != none and el.func() == heading and (el.level > chapter-level or el.numbering == none) and it.supplement == auto {
+    } else if el != none and el.func() == heading and el.supplement != [Group] and (el.level > chapter-level or el.numbering == none) and it.supplement == auto {
       link(el.location(), [“#el.body” (p.~#folio-at(el.location()))])
     } else {
       it
@@ -312,24 +315,26 @@
     v(14pt)
     line(length: 30mm, stroke: 2pt + blue)
   })
-  show heading.where(level: chapter-level): it => block(width: 100%, above: 0pt, below: 4 * unit, {
-    v(22mm)
-    context {
-      let mark = chapter-mark(it)
-      if mark != none {
-        let kicker = if it.numbering != none [Chapter] else { chapter-tag-label.at(it.location()) }
-        if kicker != none { block(below: 10pt, caps(kicker, size: 8pt)) }
-        block(below: 14pt, text(font: sans, size: 60pt, weight: 300, fill: blue,
-          top-edge: "cap-height", bottom-edge: "baseline", mark))
-      } else {
-        v(26pt)
+  show heading.where(level: chapter-level): it => if it.supplement == [Group] { none } else {
+    block(width: 100%, above: 0pt, below: 4 * unit, {
+      v(22mm)
+      context {
+        let mark = chapter-mark(it)
+        if mark != none {
+          let kicker = if it.numbering != none [Chapter] else { chapter-tag-label.at(it.location()) }
+          if kicker != none { block(below: 10pt, caps(kicker, size: 8pt)) }
+          block(below: 14pt, text(font: sans, size: 60pt, weight: 300, fill: blue,
+            top-edge: "cap-height", bottom-edge: "baseline", mark))
+        } else {
+          v(26pt)
+        }
       }
-    }
-    block(above: 0pt, below: 0pt, par(leading: 0.3em,
-      text(size: 23pt, weight: 600, tracking: -0.01em, it.body)))
-    v(12pt)
-    line(length: 100%, stroke: 1pt + ink)
-  })
+      block(above: 0pt, below: 0pt, par(leading: 0.3em,
+        text(size: 23pt, weight: 600, tracking: -0.01em, it.body)))
+      v(12pt)
+      line(length: 100%, stroke: 1pt + ink)
+    })
+  }
 
   // Tables: rules instead of a grid, no hyphenation in cells. Tables of five rows or fewer
   // stay whole; longer ones may break between rows, never inside one, so they should mark
@@ -363,6 +368,9 @@
           grid(columns: (1fr, auto), column-gutter: 6pt,
             text(font: sans, size: 11.5pt, weight: 700, fill: blue, [Part #n#h(0.6em)#entry.body]),
             text(font: sans, size: 10.5pt, weight: 600, pg)))))
+    } else if entry.supplement == [Group] {
+      block(above: 2.2 * unit, below: 0pt, sticky: true,
+        grid(columns: (9mm, 1fr), [], caps(entry.body, size: 7.4pt)))
     } else if entry.level == chapter-level {
       block(above: 1.9 * unit, below: 0.9 * unit, sticky: true, link(entry.location(),
         grid(columns: (9mm, 1fr, auto), column-gutter: (0pt, 6pt),
@@ -416,7 +424,7 @@
   [#metadata(none) <quiet>]
   heading(level: chapter-level, numbering: none, outlined: false, bookmarked: true)[Brief contents]
   {
-    // One page with the book's shape: parts and chapters, no sections.
+    // The book's shape at a glance: parts and chapters, no sections or groups.
     show outline.entry: it => {
       let entry = it.element
       if entry.supplement == [Part] {
@@ -424,6 +432,8 @@
         link(entry.location(), toc-row(above: 2.6 * unit,
           caps([Part #n], size: 7.4pt, weight: 700, fill: blue),
           text(weight: 600, entry.body), none))
+      } else if entry.supplement == [Group] {
+        none
       } else { chapter-row(entry) }
     }
     outline(title: none, depth: chapter-level, target: heading)
@@ -462,13 +472,18 @@
     let next-part = query(heading.where(level: 1).after(here()))
     let end = if next-part.len() > 0 { next-part.first().location().page() } else { none }
     let chapters = query(heading.where(level: chapter-level).after(here()))
-      .filter(h => end == none or h.location().page() < end)
+      .filter(h => h.supplement != [Group] and (end == none or h.location().page() < end))
     if chapters.len() > 0 {
       line(length: 100%, stroke: 0.5pt + rule)
       for h in chapters { chapter-row(h) }
     }
   }
 }
+
+// A group labels a run of chapters in the full contents and prints nothing; put it just
+// before the group's first chapter.
+#let group(title) = heading(level: chapter-level, numbering: none, supplement: [Group],
+  bookmarked: false, title)
 
 // ---------------------------------------------------------------- chapters
 
@@ -552,7 +567,8 @@
     context {
       let pos = here().position()
       let fill = (pos.y - margins.top) / (page-height - margins.top - margins.bottom)
-      let opener = query(heading.where(level: chapter-level).before(here())).last().location().page()
+      let opener = query(heading.where(level: chapter-level).before(here()))
+        .filter(h => h.supplement != [Group]).last().location().page()
       [#metadata((chapter: idx, page: pos.page, opener: opener, fill: fill)) <fit>]
     }
   }

@@ -17,7 +17,8 @@ TOLERANCE = 1.0  # points
 # Typst hangs punctuation and hyphens slightly into the margin on purpose.
 HANGING = ",.;:-\xad–—)’”"
 SECTION_LABEL = re.compile(r"<sec-[\w.:-]+>")
-ANSWER_LINK = re.compile(r"(?:\bAnswer [A-Za-z0-9._-]+\.\d+, page \w+ →|← page \w+)$")
+ANSWER_LINK = re.compile(r"(?:\bAnswer [\w.-]+\.\d+, page \w+ →|← page \w+)$")
+BACKLINK = re.compile(r"^← page \w+$")
 
 
 def page_texts(pdf, poppler):
@@ -63,55 +64,114 @@ def word_boxes(pdf, poppler):
     return pages
 
 
-def answer_links(pdf, poppler):
+def parse_answer_links(xml_text, html_name, answers=None):
+    """Return answer/backlink counts and per-answer row backlinks from pdftohtml XML."""
+    links = Counter()
+    row_backlinks = {}
+    by_page = {}
+    for a in answers or ():
+        if a["page"] is not None:
+            by_page.setdefault(a["page"], set()).add(a["n"])
+    for page in ET.fromstring(xml_text).iter("page"):
+        page_num = int(required_attribute(page, "number"))
+        for anchor in page.iter("a"):
+            printed = ANSWER_LINK.search(" ".join("".join(anchor.itertext()).split()))
+            file, _, dest = anchor.get("href", "").rpartition("#")
+            if printed and file == html_name and dest.isdecimal():
+                links[page_num, printed.group(), int(dest)] += 1
+        expected = by_page.get(page_num)
+        if not expected:
+            continue
+        texts = []
+        backlinks = []
+        for el in page.iter("text"):
+            top = float(required_attribute(el, "top"))
+            left = float(required_attribute(el, "left"))
+            height = float(required_attribute(el, "height"))
+            label = " ".join("".join(el.itertext()).split())
+            texts.append((top, left, height, label))
+            for anchor in el.iter("a"):
+                printed = BACKLINK.fullmatch(
+                    " ".join("".join(anchor.itertext()).split())
+                )
+                file, _, dest = anchor.get("href", "").rpartition("#")
+                if printed and file == html_name and dest.isdecimal():
+                    backlinks.append((top, height, printed.group(), int(dest)))
+        num_lefts = [left for _, left, _, label in texts if label in expected]
+        if not num_lefts:
+            continue
+        col1_left = min(num_lefts)
+        # Skip the odd-page running head ("Answers" at the right margin); only a column-1
+        # Answers heading marks where the Answers section begins on a shared page.
+        heading_tops = [
+            top
+            for top, left, _, label in texts
+            if label == "Answers" and left <= col1_left + 2
+        ]
+        after_top = max(heading_tops) if heading_tops else -1
+        for top, left, height, label in texts:
+            if label not in expected or left > col1_left + 2 or top <= after_top:
+                continue
+            matches = [
+                (printed, dest)
+                for bl_top, bl_h, printed, dest in backlinks
+                if bl_top > after_top and bl_top < top + height and top < bl_top + bl_h
+            ]
+            if len(matches) == 1:
+                row_backlinks[page_num, label] = matches[0]
+    return links, row_backlinks
+
+
+def answer_links(pdf, poppler, answers=None):
     out = subprocess.run(
         [poppler / "pdftohtml", "-q", "-xml", "-i", "-stdout", str(pdf)],
         capture_output=True,
         text=True,
         check=True,
     )
-    links = Counter()
-    for page in ET.fromstring(out.stdout).iter("page"):
-        for anchor in page.iter("a"):
-            printed = ANSWER_LINK.search(" ".join("".join(anchor.itertext()).split()))
-            file, _, dest = anchor.get("href", "").rpartition("#")
-            if printed and file == pdf.with_suffix(".html").name and dest.isdecimal():
-                links[
-                    int(required_attribute(page, "number")), printed.group(), int(dest)
-                ] += 1
-    return links
+    return parse_answer_links(out.stdout, pdf.with_suffix(".html").name, answers)
 
 
-def answer_entry(answer_page, n, next_n):
-    """Return answer `n`'s text slice on `answer_page`, or None if `n` is absent."""
+def answer_entries(answer_page, page_answers):
+    """Split `answer_page` into text slices keyed by answer number."""
+    if not page_answers:
+        return {}
     heading = re.search(r"^\s*Answers\s*$", answer_page, re.M)
     region = answer_page[heading.end() :] if heading else answer_page
-    start = re.search(rf"^([ \t]*){re.escape(n)}(?=\s|$)", region, re.M)
-    if not start:
-        return None
-    tail = region[start.end() :]
-    if next_n is not None:
-        # Match the next answer number only at column 1's indent, not wrapped prompt text
-        # indented into column 2.
-        max_indent = len(start.group(1)) + 1
-        nxt = re.search(
-            rf"^[ \t]{{0,{max_indent}}}{re.escape(next_n)}(?=\s|$)", tail, re.M
-        )
-        if nxt:
-            tail = tail[: nxt.start()]
-    return region[start.start() : start.end()] + tail
+    alts = "|".join(re.escape(n) for n in page_answers)
+    # Real answer numbers sit in column 1; wrapped prompt and answer lines are indented
+    # into column 2. Use the leftmost match on the page to bound column 1's indent.
+    matches = list(re.finditer(rf"^([ \t]*)({alts})(?=\s|$)", region, re.M))
+    if not matches:
+        return {}
+    max_indent = min(len(m.group(1)) for m in matches) + 1
+    headers = [m for m in matches if len(m.group(1)) <= max_indent]
+    starts = []
+    pos = 0
+    for n in page_answers:
+        for i in range(pos, len(headers)):
+            if headers[i].group(2) == n:
+                starts.append((n, headers[i].start()))
+                pos = i + 1
+                break
+    return {
+        n: region[start : (starts[i + 1][1] if i + 1 < len(starts) else len(region))]
+        for i, (n, start) in enumerate(starts)
+    }
 
 
-def check_answers(questions, answers, texts, links):
+def check_answers(questions, answers, texts, links, row_backlinks=None):
     problems = []
     expected_links = Counter()
     by_number = {a["n"]: a for a in answers}
-    next_on_page = {}
-    for index, a in enumerate(answers):
-        for later in answers[index + 1 :]:
-            if later["page"] == a["page"]:
-                next_on_page[a["n"]] = later["n"]
-                break
+    answers_by_page = {}
+    for a in answers:
+        if a["page"] is not None:
+            answers_by_page.setdefault(a["page"], []).append(a["n"])
+    entries_by_page = {
+        page: answer_entries(texts[page - 1], page_answers)
+        for page, page_answers in answers_by_page.items()
+    }
     for q in questions:
         n = q["n"]
         a = by_number.get(n)
@@ -129,9 +189,8 @@ def check_answers(questions, answers, texts, links):
             problems.append(
                 f"question {n}: pointer on page {q['folio']} does not say page {a['folio']}"
             )
-        answer_page = texts[a["page"] - 1]
         backlink = f"← page {q['folio']}"
-        entry = answer_entry(answer_page, n, next_on_page.get(n))
+        entry = entries_by_page[a["page"]].get(n)
         # A long inline-code token in a prompt can push the back link onto its own line in
         # `pdftotext -layout`, so match it anywhere within this answer's slice.
         if entry is None or not re.search(
@@ -139,6 +198,15 @@ def check_answers(questions, answers, texts, links):
         ):
             problems.append(
                 f"answer {n}: back link on page {a['folio']} does not say page {q['folio']}"
+            )
+        # When XML link positions are available, tie each answer's clickable back link to
+        # its row so plain text in an answer body cannot mask swapped back links.
+        if row_backlinks is not None and row_backlinks.get((a["page"], n)) != (
+            backlink,
+            q["page"],
+        ):
+            problems.append(
+                f"answer {n}: back link on page {a['folio']} does not link to page {q['folio']}"
             )
         expected_links[q["page"], pointer, a["page"]] += 1
         expected_links[a["page"], backlink, q["page"]] += 1
@@ -241,9 +309,8 @@ def run(pdf, typst):
         f"diagrams: {len(diagrams)}; questions: {len(questions) - cases}; cases: {cases}"
     )
 
-    problems = check_answers(
-        questions, answers, texts, answer_links(pdf, typst.poppler)
-    )
+    links, row_backlinks = answer_links(pdf, typst.poppler, answers)
+    problems = check_answers(questions, answers, texts, links, row_backlinks)
     print(f"answers checked: {len(answers)}")
     problems += check_section_labels(typst)
     outside = overflow(boxes, geometry)
