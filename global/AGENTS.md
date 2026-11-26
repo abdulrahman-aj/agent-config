@@ -11,7 +11,6 @@
 * **Comments.** Explain why, not what: rationale, invariants, performance and constraints.
 * **Shell.** Don't embed Python in `.sh` files. Write a `.py` file instead.
 * **Chesterton's fence.** Understand why something exists before you remove it.
-* **Checks and parsers.** Match candidate inputs broadly and fail on unrecognized shapes. Never silently skip input a check is meant to inspect.
 
 # Testing
 * **Always verify.** Claim success only with evidence. Running the real thing counts; evidence isn't always a new test. Report what you ran and what it showed.
